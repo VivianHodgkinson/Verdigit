@@ -156,6 +156,8 @@ export interface Settings {
   hasGitHubToken: boolean
   pullMode: 'merge' | 'rebase' | 'ff-only'
   theme: Theme
+  /** Accent colour: a preset id (see lib/accent.ts) or '#rrggbb'; null is the default green */
+  accent: string | null
   /** Explicit git executable; null means auto-detect */
   gitPath: string | null
   autoUpdate: boolean

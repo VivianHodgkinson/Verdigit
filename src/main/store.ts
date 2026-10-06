@@ -42,6 +42,7 @@ function load(): StoredSettings {
     gitHubToken: null,
     pullMode: 'merge',
     theme: 'dark',
+    accent: null,
     gitPath: null,
     autoUpdate: true
   }

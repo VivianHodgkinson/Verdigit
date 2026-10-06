@@ -10,6 +10,7 @@ import { buildPatch, parseDiff, parseConflicts } from '../src/renderer/src/lib/d
 import { layoutGraph } from '../src/renderer/src/lib/graph'
 import { assetName, installCommand } from '../src/main/updateAsset'
 import { remoteWebUrl } from '../src/renderer/src/format'
+import { ACCENT_PRESETS, accentVars, luminance, readableAccent } from '../src/renderer/src/lib/accent'
 
 const sh = (cwd: string, cmd: string): string => execSync(cmd, { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 't@x', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 't@x' } })
 process.env.GIT_AUTHOR_NAME = 'Test'
@@ -334,6 +335,24 @@ async function main(): Promise<void> {
     assert.equal(remoteWebUrl('/home/u/repos/bare.git'), null)
     assert.equal(remoteWebUrl('C:\\repos\\bare.git'), null)
     assert.equal(remoteWebUrl('file:///srv/repo.git'), null)
+  })
+
+  await test('accent colours stay readable in both themes', async () => {
+    assert.equal(accentVars(null, 'dark'), null)
+    assert.equal(accentVars('green', 'light'), null)
+    assert.equal(accentVars('not-a-colour', 'dark'), null)
+    assert.equal(accentVars('blue', 'dark')?.['--accent'], '#60a5fa')
+    assert.equal(accentVars('blue', 'light')?.['--accent-ink'], '#ffffff')
+    for (const p of ACCENT_PRESETS) {
+      assert.ok(luminance(p.dark) >= 0.25, `${p.id} dark is too dim`)
+      // No paler than the original light-theme green, which carries white button text.
+      assert.ok(luminance(p.light) <= luminance('#16a34a'), `${p.id} light is too pale for white text`)
+    }
+    // Navy is lifted on the dark theme, yellow deepened on the light one; readable colours are left alone.
+    assert.ok(luminance(readableAccent('#1e3a8a', 'dark')) >= 0.25)
+    assert.ok(luminance(readableAccent('#fde047', 'light')) <= 0.2)
+    assert.equal(readableAccent('#60A5FA', 'dark'), '#60a5fa')
+    assert.equal(accentVars('#1e3a8a', 'light')?.['--accent'], '#1e3a8a')
   })
 
   console.log(`\n${passed} passed${process.exitCode ? ', some FAILED' : ''}`)

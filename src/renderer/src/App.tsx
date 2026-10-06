@@ -19,7 +19,7 @@ export function App() {
   const [active, setActive] = useState<string | null>(null)
   const [log, setLog] = useState<LogEntry[]>([])
   const [consoleOpen, setConsoleOpen] = useState(false)
-  useTheme(settings?.theme)
+  useTheme(settings?.theme, settings?.accent)
   const update = useUpdateStatus()
   const stripRef = useRef<HTMLDivElement>(null)
 

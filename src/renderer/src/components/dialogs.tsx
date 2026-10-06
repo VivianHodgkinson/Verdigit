@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Commit, GitHubRepo, RebaseAction, RebaseTodo, Settings, Theme } from '@shared/types'
 import { api, on } from '../api'
 import { relTime, repoNameFromUrl, short } from '../format'
+import { ACCENT_PRESETS, accentSwatch } from '../lib/accent'
+import { applyTheme, resolveTheme } from '../theme'
 import { Dialog, useUI } from '../ui'
 import { Icon } from './Icon'
 import { UpdateSettings } from './Updates'
@@ -309,6 +311,43 @@ export function CloneDialog({ settings, done }: { settings: Settings; done: (pat
 
 // ---------------------------------------------------------------- settings
 
+/** Preset swatches plus a custom colour. Applies live like the theme; custom picks are saved once dragging settles. */
+function AccentPicker({ settings, onChange }: { settings: Settings; onChange: (accent: string | null) => void }) {
+  const mode = resolveTheme(settings.theme)
+  const current = settings.accent ?? 'green'
+  const isCustom = current.startsWith('#')
+  const [custom, setCustom] = useState(isCustom ? current : accentSwatch(current, mode))
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+
+  const pickCustom = (hex: string): void => {
+    setCustom(hex)
+    applyTheme(settings.theme, hex)
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => onChange(hex), 300)
+  }
+
+  return (
+    <div className="swatches">
+      {ACCENT_PRESETS.map((p) => (
+        <button
+          key={p.id}
+          className={`swatch${current === p.id ? ' on' : ''}`}
+          style={{ background: p[mode] }}
+          title={p.label}
+          onClick={() => onChange(p.id === 'green' ? null : p.id)}
+        >
+          {current === p.id && <Icon name="check" size={13} />}
+        </button>
+      ))}
+      <label className={`swatch custom${isCustom ? ' on' : ''}`} style={isCustom ? { background: accentSwatch(current, mode) } : undefined} title="Custom colour…">
+        <Icon name={isCustom ? 'check' : 'plus'} size={13} />
+        <input type="color" value={custom} onChange={(e) => pickCustom(e.target.value)} />
+      </label>
+    </div>
+  )
+}
+
 export function SettingsDialog({ settings, onSaved, done }: { settings: Settings; onSaved: (s: Settings) => void; done: (v: null) => void }) {
   const ui = useUI()
   const [name, setName] = useState('')
@@ -336,6 +375,12 @@ export function SettingsDialog({ settings, onSaved, done }: { settings: Settings
   // Theme applies immediately so you can preview it.
   const setTheme = async (theme: Theme): Promise<void> => {
     const next = await api.saveSettings({ theme })
+    setS(next)
+    onSaved(next)
+  }
+
+  const setAccent = async (accent: string | null): Promise<void> => {
+    const next = await api.saveSettings({ accent })
     setS(next)
     onSaved(next)
   }
@@ -395,6 +440,10 @@ export function SettingsDialog({ settings, onSaved, done }: { settings: Settings
             </span>
           </button>
         ))}
+      </div>
+      <div className="row" style={{ gap: 12 }}>
+        <span className="dim" style={{ width: 52 }}>Accent</span>
+        <AccentPicker settings={s} onChange={setAccent} />
       </div>
 
       <h4 className="faint" style={{ margin: '8px 0 0', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' }}>Git identity (global)</h4>
