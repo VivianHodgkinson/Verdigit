@@ -353,6 +353,10 @@ async function main(): Promise<void> {
     assert.ok(luminance(readableAccent('#fde047', 'light')) <= 0.2)
     assert.equal(readableAccent('#60A5FA', 'dark'), '#60a5fa')
     assert.equal(accentVars('#1e3a8a', 'light')?.['--accent'], '#1e3a8a')
+    // Backgrounds rotate from the default green's hue to the accent's; grey accents give grey backgrounds.
+    assert.ok(Math.abs(Number(accentVars('orange', 'dark')?.['--tint-shift']) + 120) < 10)
+    assert.equal(accentVars('blue', 'dark')?.['--tint-sat'], '1.00')
+    assert.equal(accentVars('#808080', 'dark')?.['--tint-sat'], '0.00')
   })
 
   console.log(`\n${passed} passed${process.exitCode ? ', some FAILED' : ''}`)

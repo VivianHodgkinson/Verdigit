@@ -20,7 +20,7 @@ export const ACCENT_PRESETS: AccentPreset[] = [
   { id: 'amber', label: 'Amber', dark: '#fbbf24', light: '#b45309' }
 ]
 
-export type AccentVars = Record<'--accent' | '--accent-strong' | '--accent-hover' | '--accent-ink', string>
+export type AccentVars = Record<'--accent' | '--accent-strong' | '--accent-hover' | '--accent-ink' | '--tint-shift' | '--tint-sat', string>
 
 type Rgb = [number, number, number]
 
@@ -99,6 +99,9 @@ export function accentVars(accent: string | null | undefined, mode: 'dark' | 'li
   if (!preset && !isHex(accent)) return null
   const base = preset ? preset[mode] : readableAccent(accent, mode)
   const c = hexToRgb(base)
+  // Rotate the backgrounds' green tint by however far this accent's hue is from the default green.
+  const [hue, sat] = rgbToHsl(c)
+  const [greenHue] = rgbToHsl(hexToRgb(ACCENT_PRESETS[0][mode]))
   const black: Rgb = [0, 0, 0]
   const white: Rgb = [255, 255, 255]
   return {
@@ -106,7 +109,10 @@ export function accentVars(accent: string | null | undefined, mode: 'dark' | 'li
     '--accent-strong': rgbToHex(mix(c, black, 0.15)),
     '--accent-hover': rgbToHex(mode === 'dark' ? mix(c, white, 0.18) : mix(c, black, 0.15)),
     // Like the default theme: near-black text on the bright dark-theme accent, white on the deep light-theme one.
-    '--accent-ink': mode === 'dark' ? rgbToHex(mix(c, black, 0.92)) : '#ffffff'
+    '--accent-ink': mode === 'dark' ? rgbToHex(mix(c, black, 0.92)) : '#ffffff',
+    '--tint-shift': ((hue - greenHue) * 360).toFixed(1),
+    // A grey-ish custom accent gives grey-ish backgrounds rather than an arbitrary hue.
+    '--tint-sat': Math.min(1, sat / 0.4).toFixed(2)
   }
 }
 

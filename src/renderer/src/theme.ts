@@ -4,7 +4,7 @@ import { accentVars, type AccentVars } from './lib/accent'
 
 const KEY = 'sc.theme'
 const ACCENT_KEY = 'sc.accent'
-const ACCENT_PROPS: (keyof AccentVars)[] = ['--accent', '--accent-strong', '--accent-hover', '--accent-ink']
+const ACCENT_PROPS: (keyof AccentVars)[] = ['--accent', '--accent-strong', '--accent-hover', '--accent-ink', '--tint-shift', '--tint-sat']
 const darkQuery = (): MediaQueryList => window.matchMedia('(prefers-color-scheme: dark)')
 
 export function resolveTheme(theme: Theme): 'dark' | 'light' {
@@ -15,7 +15,7 @@ export function applyTheme(theme: Theme, accent: string | null): void {
   const root = document.documentElement
   const mode = resolveTheme(theme)
   root.dataset.theme = mode
-  // Inline variables override the stylesheet's green; the soft tints in styles.css derive from --accent.
+  // Inline variables override the stylesheet's green; the soft tints and the neutrals' hue in styles.css derive from these.
   const vars = accentVars(accent, mode)
   for (const p of ACCENT_PROPS) {
     if (vars) root.style.setProperty(p, vars[p])
