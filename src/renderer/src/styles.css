@@ -511,6 +511,13 @@ button {
   background: var(--bg-3);
   color: var(--text);
 }
+.statusbar .item.fetch {
+  flex: none;
+  white-space: nowrap;
+}
+.statusbar .item.warn {
+  color: var(--warn);
+}
 .statusbar .busy {
   color: var(--accent);
 }

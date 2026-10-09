@@ -155,12 +155,22 @@ export interface Settings {
   gitHubUser: string | null
   hasGitHubToken: boolean
   pullMode: 'merge' | 'rebase' | 'ff-only'
+  /** Fetch open repos in the background every this many minutes; 0 is off */
+  autoFetchMinutes: number
   theme: Theme
   /** Accent colour: a preset id (see lib/accent.ts) or '#rrggbb'; null is the default green */
   accent: string | null
   /** Explicit git executable; null means auto-detect */
   gitPath: string | null
   autoUpdate: boolean
+}
+
+/** The last fetch of a repo, automatic or manual, since the app started */
+export interface FetchInfo {
+  /** ms since epoch */
+  time: number
+  /** Why it failed, or null if it worked */
+  error: string | null
 }
 
 export interface UpdateStatus {

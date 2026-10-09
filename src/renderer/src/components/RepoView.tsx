@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode }
 import type { Settings } from '@shared/types'
 import { createBranch, createPullRequest, fetchAll, flowMenu, openRemote, openRemoteMenu, pull, push, stash, stashPop } from '../actions'
 import { api } from '../api'
-import { short } from '../format'
+import { relTime, short } from '../format'
 import { RepoProvider, useRepo, useRepoController } from '../repo'
 import { CommitGraph } from './CommitGraph'
 import { ComparePanel, CommitPanel, StashPanel } from './CommitPanel'
@@ -167,6 +167,7 @@ function RepoLayout({ footer }: { footer: (info: ReactNode) => ReactNode }) {
           )}
         </span>
       )}
+      <FetchStatus />
       {ctx.busy && (
         <span className="item busy">
           <span className="spinner" /> {ctx.busy}…
@@ -199,6 +200,30 @@ function RepoLayout({ footer }: { footer: (info: ReactNode) => ReactNode }) {
       </div>
       {footer(statusInfo)}
     </div>
+  )
+}
+
+/** "Fetched 3m ago" in the status bar; click to fetch now. Shows a warning when the last fetch failed. */
+function FetchStatus() {
+  const ctx = useRepo()
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 30_000)
+    return () => clearInterval(t)
+  }, [])
+  const info = ctx.lastFetch
+  if (!info || !ctx.data.remotes.length) return null
+  const auto = ctx.settings.autoFetchMinutes > 0 ? `Auto-fetch every ${ctx.settings.autoFetchMinutes} min. ` : ''
+  return (
+    <button
+      className={`item fetch${info.error ? ' warn' : ''}`}
+      title={`${info.error ? `Last fetch failed: ${info.error}\n` : ''}${auto}Click to fetch now.`}
+      disabled={!!ctx.busy}
+      onClick={() => fetchAll(ctx)}
+    >
+      <Icon name={info.error ? 'alert' : 'fetch'} size={12} />
+      {info.error ? 'Fetch failed' : `Fetched ${relTime(info.time / 1000)}`}
+    </button>
   )
 }
 

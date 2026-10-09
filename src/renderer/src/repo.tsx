@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type {
   Branch,
   Commit,
+  FetchInfo,
   FileChange,
   GitFlowConfig,
   Remote,
@@ -58,6 +59,8 @@ export interface RepoCtx {
   focusHash: { hash: string; n: number } | null
   focus(hash: string): void
   busy: string | null
+  /** When the remotes were last fetched (by auto-fetch or by hand), if at all this session */
+  lastFetch: FetchInfo | null
   /** Run a mutating operation with a busy indicator, error toast and refresh. Return false from fn to suppress the success toast. */
   run(label: string, fn: () => Promise<unknown>, success?: string): Promise<boolean>
   refresh(): Promise<void>
@@ -94,6 +97,7 @@ export function useRepoController(path: string, settings: Settings): RepoCtx {
   const [selection, setSelection] = useState<Selection>(null)
   const [view, setView] = useState<CenterView>({ kind: 'graph' })
   const [busy, setBusy] = useState<string | null>(null)
+  const [lastFetch, setLastFetch] = useState<FetchInfo | null>(null)
   const [focusHash, setFocusHash] = useState<{ hash: string; n: number } | null>(null)
   const [limit, setLimit] = useState(PAGE)
   const generation = useRef(0)
@@ -139,6 +143,14 @@ export function useRepoController(path: string, settings: Settings): RepoCtx {
     refresh()
     api.watchRepo(path).catch(() => {})
     const offChanged = on<string>('repo:changed', (p) => p === path && refresh())
+    const offFetched = on<FetchInfo & { repo: string }>('repo:fetched', ({ repo, ...info }) => {
+      if (repo !== path) return
+      setLastFetch(info)
+      refresh()
+    })
+    // Catch up on a repo whose tab wasn't open (or was opened mid-interval) when the timer last ran.
+    api.lastFetch(path).then(setLastFetch, () => {})
+    api.fetchIfDue(path).catch(() => {})
     const onFocus = (): void => void refresh()
     window.addEventListener('focus', onFocus)
     const poll = setInterval(() => {
@@ -146,6 +158,7 @@ export function useRepoController(path: string, settings: Settings): RepoCtx {
     }, 3000)
     return () => {
       offChanged()
+      offFetched()
       window.removeEventListener('focus', onFocus)
       clearInterval(poll)
     }
@@ -194,11 +207,12 @@ export function useRepoController(path: string, settings: Settings): RepoCtx {
       focusHash,
       focus,
       busy,
+      lastFetch,
       run,
       refresh,
       hasMore: data.commits.length >= limit,
       loadMore: () => setLimit((l) => l + PAGE)
     }),
-    [path, data, loaded, missing, settings, ui, selection, view, focusHash, focus, busy, run, refresh, limit]
+    [path, data, loaded, missing, settings, ui, selection, view, focusHash, focus, busy, lastFetch, run, refresh, limit]
   )
 }

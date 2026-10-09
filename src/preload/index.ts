@@ -3,7 +3,7 @@ import type { ApiMethod, IpcResult } from '@shared/api'
 
 const bridge = {
   invoke: (method: ApiMethod, args: unknown[]): Promise<IpcResult<unknown>> => ipcRenderer.invoke('api', method, args),
-  on: (channel: 'repo:changed' | 'git:log' | 'askpass:request' | 'progress' | 'update:status', cb: (payload: unknown) => void): (() => void) => {
+  on: (channel: 'repo:changed' | 'repo:fetched' | 'git:log' | 'askpass:request' | 'progress' | 'update:status', cb: (payload: unknown) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, payload: unknown): void => cb(payload)
     ipcRenderer.on(channel, listener)
     return () => ipcRenderer.removeListener(channel, listener)
