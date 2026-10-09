@@ -39,7 +39,7 @@ export const PROVIDERS: Record<ProviderKind, ProviderInfo> = {
     hasApi: true,
     tokenPage: (url) => `${url}/-/user_settings/personal_access_tokens`,
     tokenHint:
-      'A fine-grained token with Code (Read, Push) and Merge Request (Create) on your projects, and User (Read) and Project (Read) on the User tab. Or a legacy token with the api scope.',
+      'A fine-grained token with Code (Download, Push) and Merge Request (Create) on your projects, and User (Read) and Project (Read) on the User tab. Or a legacy token with the api scope.',
     tokenPlaceholder: 'glpat-…',
     branchPath: (b) => `/-/tree/${enc(b)}`
   },
