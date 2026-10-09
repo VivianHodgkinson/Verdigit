@@ -649,6 +649,14 @@ export async function fetch(repo: string, remote: string | null, prune: boolean)
   await run(repo, args)
 }
 
+/**
+ * Fetch for the auto-fetch timer: same as Fetch all, but credential prompts are answered
+ * "no" instead of popping up a dialog while the user is doing something else.
+ */
+export async function fetchInBackground(repo: string): Promise<void> {
+  await run(repo, ['fetch', '--tags', '--prune', '--all'], { env: { SC_ASKPASS_BACKGROUND: '1' } })
+}
+
 export async function pull(repo: string, mode: 'merge' | 'rebase' | 'ff-only'): Promise<void> {
   const flag = mode === 'merge' ? '--no-rebase' : mode === 'rebase' ? '--rebase' : '--ff-only'
   await run(repo, ['pull', flag])

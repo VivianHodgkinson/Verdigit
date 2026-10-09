@@ -15,7 +15,7 @@ const CLIENT = `
 const net = require('net');
 const sock = net.connect(process.env.SC_ASKPASS_SOCK);
 let buf = '';
-sock.on('connect', () => sock.write(JSON.stringify({ prompt: process.argv[2] || '' }) + '\\n'));
+sock.on('connect', () => sock.write(JSON.stringify({ prompt: process.argv[2] || '', background: process.env.SC_ASKPASS_BACKGROUND === '1' }) + '\\n'));
 sock.on('data', (d) => (buf += d));
 sock.on('end', () => {
   try {
@@ -31,7 +31,7 @@ sock.on('error', () => process.exit(1));
 let server: Server | null = null
 let socketPath = ''
 
-export async function startAskPass(handler: (prompt: string) => Promise<string | null>): Promise<Record<string, string>> {
+export async function startAskPass(handler: (prompt: string, background: boolean) => Promise<string | null>): Promise<Record<string, string>> {
   const dir = join(app.getPath('userData'), 'askpass')
   mkdirSync(dir, { recursive: true })
   const clientJs = join(dir, 'askpass-client.js')
@@ -57,13 +57,16 @@ export async function startAskPass(handler: (prompt: string) => Promise<string |
       const nl = buf.indexOf('\n')
       if (nl < 0) return
       let prompt = ''
+      let background = false
       try {
-        prompt = JSON.parse(buf.slice(0, nl)).prompt
+        const req = JSON.parse(buf.slice(0, nl))
+        prompt = req.prompt
+        background = req.background === true
       } catch {
         // ignore malformed request
       }
       buf = ''
-      const value = await handler(prompt).catch(() => null)
+      const value = await handler(prompt, background).catch(() => null)
       conn.end(JSON.stringify({ value }))
     })
     conn.on('error', () => {})

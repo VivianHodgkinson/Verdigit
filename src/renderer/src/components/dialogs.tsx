@@ -355,6 +355,7 @@ export function SettingsDialog({ settings, onSaved, done }: { settings: Settings
   const [token, setToken] = useState('')
   const [cloneDir, setCloneDir] = useState(settings.cloneDir)
   const [pullMode, setPullMode] = useState(settings.pullMode)
+  const [autoFetchMinutes, setAutoFetchMinutes] = useState(settings.autoFetchMinutes)
   const [gitPath, setGitPath] = useState(settings.gitPath ?? '')
   const [autoUpdate, setAutoUpdate] = useState(settings.autoUpdate)
   const [gitInfo, setGitInfo] = useState<{ path: string; version: string } | null | undefined>(undefined)
@@ -391,7 +392,7 @@ export function SettingsDialog({ settings, onSaved, done }: { settings: Settings
       // Save the git location first: the identity is written with git itself.
       await api.saveSettings({ gitPath: gitPath.trim() || null })
       if (name.trim() && email.trim()) await api.setGlobalIdentity(name.trim(), email.trim())
-      let next = await api.saveSettings({ cloneDir, pullMode, gitPath: gitPath.trim() || null, autoUpdate })
+      let next = await api.saveSettings({ cloneDir, pullMode, autoFetchMinutes, gitPath: gitPath.trim() || null, autoUpdate })
       if (!(await api.gitInfo())) throw new Error('Git still cannot be found. Check the Git executable path.')
       if (token.trim()) next = await api.setGitHubToken(token.trim())
       onSaved(next)
@@ -528,6 +529,16 @@ export function SettingsDialog({ settings, onSaved, done }: { settings: Settings
           <option value="rebase">Rebase (git pull --rebase)</option>
           <option value="ff-only">Fast-forward only</option>
         </select>
+      </div>
+      <div className="field">
+        <label>Auto-fetch</label>
+        <select className="select" value={autoFetchMinutes} onChange={(e) => setAutoFetchMinutes(Number(e.target.value))}>
+          <option value={0}>Off</option>
+          {[5, 10, 15, 30].map((m) => (
+            <option key={m} value={m}>Every {m} minutes</option>
+          ))}
+        </select>
+        <div className="hint">Fetches the remotes of your open tabs in the background, so the pull and push counts stay current. Repos that need a password can't be fetched in the background; fetch those yourself.</div>
       </div>
 
       <h4 className="faint" style={{ margin: '8px 0 0', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' }}>Updates</h4>

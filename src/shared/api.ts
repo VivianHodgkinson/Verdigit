@@ -6,6 +6,7 @@ import type {
   DiffOptions,
   FileChange,
   FlowFinishOptions,
+  FetchInfo,
   FlowKind,
   GitFlowConfig,
   GitHubRepo,
@@ -118,6 +119,8 @@ export interface Api {
   renameRemote(repo: string, oldName: string, newName: string): Promise<void>
   setRemoteUrl(repo: string, name: string, url: string): Promise<void>
   fetch(repo: string, remote: string | null, prune: boolean): Promise<void>
+  lastFetch(repo: string): Promise<FetchInfo | null>
+  fetchIfDue(repo: string): Promise<void>
   pull(repo: string, mode: 'merge' | 'rebase' | 'ff-only'): Promise<void>
   push(repo: string, remote: string, branch: string, setUpstream: boolean, force: boolean): Promise<void>
   pushTags(repo: string, remote: string): Promise<void>

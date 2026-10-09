@@ -5,6 +5,7 @@ import { join, normalize, resolve } from 'node:path'
 import type { Api, ApiMethod, IpcResult } from '@shared/api'
 import type { AskPassRequest } from '@shared/types'
 import { startAskPass, stopAskPass } from './askpass'
+import * as autofetch from './autofetch'
 import * as git from './git'
 import * as flow from './gitflow'
 import * as github from './github'
@@ -282,8 +283,16 @@ const api: Api = {
   removeRemote: git.removeRemote,
   renameRemote: git.renameRemote,
   setRemoteUrl: git.setRemoteUrl,
-  fetch: git.fetch,
-  pull: git.pull,
+  fetch: async (repo, remote, prune) => {
+    await git.fetch(repo, remote, prune)
+    autofetch.recordFetch(repo)
+  },
+  lastFetch: async (repo) => autofetch.lastFetch(repo),
+  fetchIfDue: autofetch.fetchIfDue,
+  pull: async (repo, mode) => {
+    await git.pull(repo, mode)
+    autofetch.recordFetch(repo)
+  },
   push: git.push,
   pushTags: git.pushTags,
 
@@ -327,13 +336,14 @@ ipcMain.on('askpass:respond', (_e, id: number, value: string | null) => {
   pendingAsks.delete(id)
 })
 
-async function askPass(prompt: string): Promise<string | null> {
+async function askPass(prompt: string, background: boolean): Promise<string | null> {
   const token = store.getGitHubToken()
   if (token && /github\.com/i.test(prompt)) {
     if (/^username/i.test(prompt)) return 'x-access-token'
     if (/^password/i.test(prompt)) return token
   }
-  if (!win) return null
+  // Background fetches never pop up a dialog; the fetch fails and is retried on the next pass.
+  if (!win || background) return null
   const req: AskPassRequest = { id: ++askId, prompt }
   send('askpass:request', req)
   return new Promise((resolve) => pendingAsks.set(req.id, resolve))
@@ -348,6 +358,11 @@ app.whenReady().then(async () => {
   configureRunner(env, (entry) => send('git:log', entry), () => findGit(store.getSettings().gitPath))
   createWindow()
   checkGitInstalled()
+  autofetch.startAutoFetch({
+    repos: () => store.getSettings().openTabs,
+    minutes: () => store.getSettings().autoFetchMinutes,
+    onFetched: (repo, info) => send('repo:fetched', { repo, ...info })
+  })
   initUpdater((s) => send('update:status', s), () => store.getSettings().autoUpdate)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -379,5 +394,6 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   stopAskPass()
+  autofetch.stopAutoFetch()
   for (const repo of watchers.keys()) unwatchRepo(repo)
 })

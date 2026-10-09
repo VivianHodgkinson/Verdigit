@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import * as git from '../src/main/git'
 import * as flow from '../src/main/gitflow'
+import * as autofetch from '../src/main/autofetch'
+import type { FetchInfo } from '../src/shared/types'
 import { buildPatch, parseDiff, parseConflicts } from '../src/renderer/src/lib/diff'
 import { layoutGraph } from '../src/renderer/src/lib/graph'
 import { assetName, installCommand } from '../src/main/updateAsset'
@@ -280,6 +282,27 @@ async function main(): Promise<void> {
     assert.ok(bs.some((b) => b.remote === 'origin' && b.name === 'origin/develop'))
     await git.checkoutRemote(repo, 'origin/main', 'main')
     assert.equal((await git.repoState(repo)).branch, 'main')
+  })
+
+  await test('auto-fetch: fetches open repos when due, once per interval', async () => {
+    const clone = join(base, 'clone')
+    sh(clone, 'git checkout -q main')
+    writeFileSync(join(clone, 'auto.txt'), 'a\n')
+    sh(clone, 'git add -A && git commit -qm "Auto-fetch me" && git push -q origin main')
+    const seen: FetchInfo[] = []
+    autofetch.startAutoFetch({ repos: () => [repo], minutes: () => 10, onFetched: (_r, info) => seen.push(info) })
+    try {
+      await autofetch.fetchIfDue(repo)
+      assert.equal(seen.length, 1)
+      assert.equal(seen[0].error, null)
+      assert.equal((await git.repoState(repo)).behind, 1)
+      // Just fetched, so not due again within the interval.
+      await autofetch.fetchIfDue(repo)
+      assert.equal(seen.length, 1)
+      assert.equal(autofetch.lastFetch(repo)?.time, seen[0].time)
+    } finally {
+      autofetch.stopAutoFetch()
+    }
   })
 
   await test('graph layout', async () => {
