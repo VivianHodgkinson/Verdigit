@@ -66,7 +66,7 @@ export function Welcome({ settings, onOpen, onForget }: { settings: Settings; on
           <button className="action-card" onClick={clone}>
             <Icon name="download" size={22} />
             <span className="t">Clone repository</span>
-            <span className="d">Clone from GitHub or any Git URL over HTTPS or SSH.</span>
+            <span className="d">Clone from GitHub, GitLab, Gitea or any Git URL over HTTPS or SSH.</span>
           </button>
           <button className="action-card" onClick={init}>
             <Icon name="plus" size={22} />

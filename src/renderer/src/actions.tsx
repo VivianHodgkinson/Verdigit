@@ -2,6 +2,7 @@ import type { Branch, Commit, FileChange, FlowKind, Stash, Tag } from '@shared/t
 import { api } from './api'
 import { PullRequestDialog, RebaseDialog } from './components/dialogs'
 import { copy, remoteWebUrl, short } from './format'
+import { parseRemoteUrl, PROVIDERS, providerForHost, remoteWeb } from '@shared/hosts'
 import type { RepoCtx } from './repo'
 import type { MenuItem } from './ui'
 
@@ -468,6 +469,7 @@ export async function flowStart(ctx: RepoCtx, kind: FlowKind): Promise<void> {
   const isVersion = kind === 'release' || kind === 'hotfix' || kind === 'support'
   const latestTag = ctx.data.tags[0]?.name
   const baseDefault = kind === 'hotfix' ? f.master : kind === 'support' ? latestTag ?? f.master : f.develop
+  const pkgVersion = kind === 'release' || kind === 'hotfix' ? await api.packageVersion(ctx.path).catch(() => null) : null
   const v = await ctx.ui.form({
     title: `Start ${FLOW_LABEL[kind]}`,
     icon: kind,
@@ -480,13 +482,16 @@ export async function flowStart(ctx: RepoCtx, kind: FlowKind): Promise<void> {
         placeholder: isVersion ? (latestTag ? `after ${latestTag}` : '1.0.0') : 'my-change',
         hint: `Branch: ${f.prefix[kind]}<name>`
       },
-      { name: 'base', label: 'Base', value: baseDefault, mono: true, hint: kind === 'support' ? 'Usually a release tag' : undefined }
+      { name: 'base', label: 'Base', value: baseDefault, mono: true, hint: kind === 'support' ? 'Usually a release tag' : undefined },
+      ...(pkgVersion !== null
+        ? [{ name: 'bump', label: `Update the version in package.json (now ${pkgVersion}) and commit it`, type: 'checkbox' as const, value: true }]
+        : [])
     ],
     submitLabel: 'Start'
   })
   if (!v) return
   const name = String(v.name).trim().replace(/\s+/g, '-')
-  await ctx.run('Starting ' + kind, () => api.flowStart(ctx.path, kind, name, v.base.trim() || null), `Started ${f.prefix[kind]}${name}`)
+  await ctx.run('Starting ' + kind, () => api.flowStart(ctx.path, kind, name, v.base.trim() || null, { bumpVersion: !!v.bump }), `Started ${f.prefix[kind]}${name}`)
 }
 
 export async function flowFinish(ctx: RepoCtx, kind: FlowKind, name: string): Promise<void> {
@@ -566,32 +571,43 @@ export function flowMenu(ctx: RepoCtx): MenuItem[] {
   return items
 }
 
-// ---------------------------------------------------------------- github
+// ---------------------------------------------------------------- pull requests
+
+/** What this repo's host calls a pull request, going by its upstream/origin remote. */
+export function pullRequestNoun(ctx: RepoCtx): string {
+  const rs = ctx.data.remotes
+  const r = rs.find((x) => x.name === 'upstream') ?? rs.find((x) => x.name === 'origin') ?? rs[0]
+  const host = r && parseRemoteUrl(r.url)?.host
+  const provider = host ? providerForHost(ctx.settings.accounts, host) : null
+  return PROVIDERS[provider ?? 'other'].prNoun
+}
 
 export async function createPullRequest(ctx: RepoCtx, branch?: string): Promise<void> {
   const head = branch ?? currentBranch(ctx)
   if (!head) return ctx.ui.toast('Check out the branch you want to open a pull request for.', 'error')
-  if (!ctx.settings.hasGitHubToken) return ctx.ui.toast('Add a GitHub token in Settings to create pull requests.', 'error')
-  const gh = await api.gitHubRemote(ctx.path).catch(() => null)
-  if (!gh) return ctx.ui.toast('No GitHub remote found for this repository.', 'error')
+  const host = await api.repoHost(ctx.path).catch(() => null)
+  if (!host) return ctx.ui.toast('This repository has no remote on a Git host.', 'error')
+  const noun = PROVIDERS[host.account?.provider ?? host.provider ?? 'other'].prNoun
+  if (!host.account) return ctx.ui.toast(`Add an account for ${host.host} in Settings → Accounts to create ${noun}s.`, 'error')
+  if (!PROVIDERS[host.account.provider].hasApi) return ctx.ui.toast(`Verdigit can't create ${noun}s on ${host.host}; it only signs in there.`, 'error')
   const local = ctx.data.branches.find((b) => !b.remote && b.name === head)
   if (!local?.upstream) {
-    const ok = await ctx.ui.confirm({ title: 'Branch not published', message: `"${head}" hasn't been pushed yet. Push it to ${gh.remote} now?`, confirmLabel: 'Push branch' })
+    const ok = await ctx.ui.confirm({ title: 'Branch not published', message: `"${head}" hasn't been pushed yet. Push it to ${host.remote} now?`, confirmLabel: 'Push branch' })
     if (!ok) return
-    const pushed = await ctx.run('Pushing', () => api.push(ctx.path, gh.remote, head, true, false))
+    const pushed = await ctx.run('Pushing', () => api.push(ctx.path, host.remote, head, true, false))
     if (!pushed) return
   } else if (local.ahead > 0) {
     ctx.ui.toast(`Note: ${head} has ${local.ahead} unpushed commit(s).`, 'info')
   }
-  const bases = ctx.data.branches.filter((b) => b.remote === gh.remote).map((b) => b.name.slice(gh.remote.length + 1)).filter((n) => n !== head)
+  const bases = ctx.data.branches.filter((b) => b.remote === host.remote).map((b) => b.name.slice(host.remote.length + 1)).filter((n) => n !== head)
   const flowBase = flowBranchInfo(ctx, head) && ctx.data.flow ? ctx.data.flow.develop : null
   const res = await ctx.ui.custom<{ title: string; body: string; base: string; draft: boolean }>((done) => (
-    <PullRequestDialog repo={`${gh.owner}/${gh.name}`} head={head} bases={bases} defaultBase={flowBase} path={ctx.path} done={done} />
+    <PullRequestDialog repo={host.path} noun={noun} head={head} bases={bases} defaultBase={flowBase} path={ctx.path} done={done} />
   ))
   if (!res) return
-  await ctx.run('Creating pull request', async () => {
+  await ctx.run(`Creating ${noun}`, async () => {
     const url = await api.createPullRequest(ctx.path, { ...res, head })
-    ctx.ui.toast(`Pull request created: ${url}`)
+    ctx.ui.toast(`${noun[0].toUpperCase()}${noun.slice(1)} created: ${url}`)
     await api.openExternal(url)
   })
 }
@@ -601,7 +617,7 @@ export async function createPullRequest(ctx: RepoCtx, branch?: string): Promise<
 /** The remote to open by default: the current branch's upstream remote, then origin, then the first with a web URL. */
 function defaultWebRemote(ctx: RepoCtx): { name: string; web: string } | null {
   const up = ctx.data.branches.find((b) => !b.remote && b.current)?.upstream?.split('/')[0]
-  const rs = ctx.data.remotes.map((r) => ({ name: r.name, web: remoteWebUrl(r.url) })).filter((r): r is { name: string; web: string } => !!r.web)
+  const rs = ctx.data.remotes.map((r) => ({ name: r.name, web: remoteWebUrl(r.url, ctx.settings.accounts) })).filter((r): r is { name: string; web: string } => !!r.web)
   return rs.find((r) => r.name === up) ?? rs.find((r) => r.name === 'origin') ?? rs[0] ?? null
 }
 
@@ -616,12 +632,13 @@ export function openRemoteMenu(ctx: RepoCtx): MenuItem[] {
   const upstream = ctx.data.branches.find((b) => !b.remote && b.current)?.upstream
   const items: MenuItem[] = []
   for (const r of ctx.data.remotes) {
-    const web = remoteWebUrl(r.url)
-    if (!web) continue
-    items.push({ label: `Open ${r.name}`, icon: 'external', onClick: () => api.openExternal(web) })
-    if (cur && upstream?.startsWith(`${r.name}/`)) {
+    const w = remoteWeb(ctx.settings.accounts, r.url)
+    if (!w) continue
+    items.push({ label: `Open ${r.name}`, icon: 'external', onClick: () => api.openExternal(w.web) })
+    if (cur && w.branchUrl && upstream?.startsWith(`${r.name}/`)) {
       const branch = upstream.slice(r.name.length + 1)
-      items.push({ label: `Open ${branch} on ${r.name}`, icon: 'branch', onClick: () => api.openExternal(`${web}/tree/${branch.split('/').map(encodeURIComponent).join('/')}`) })
+      const url = w.branchUrl(branch)
+      items.push({ label: `Open ${branch} on ${r.name}`, icon: 'branch', onClick: () => api.openExternal(url) })
     }
   }
   if (!items.length) items.push({ header: 'No remote with a web address' })
@@ -739,7 +756,7 @@ export function branchMenu(ctx: RepoCtx, b: Branch): MenuItem[] {
     { separator: true },
     { label: 'Create branch from here…', icon: 'branch', onClick: () => createBranch(ctx, b.name, b.name) },
     { label: 'Create tag here…', icon: 'tag', onClick: () => createTag(ctx, b.name, b.name) },
-    { label: 'Create pull request…', icon: 'pr', onClick: () => createPullRequest(ctx, b.name), disabled: !ctx.settings.hasGitHubToken },
+    { label: 'Create pull request…', icon: 'pr', onClick: () => createPullRequest(ctx, b.name), disabled: !ctx.data.remotes.length },
     { label: 'Set upstream…', icon: 'cloud', onClick: () => setUpstream(ctx, b) },
     { label: 'Rename…', icon: 'edit', onClick: () => renameBranch(ctx, b) },
     { label: 'Copy branch name', icon: 'copy', onClick: () => copy(b.name) },
@@ -786,7 +803,7 @@ export function stashMenu(ctx: RepoCtx, s: Stash): MenuItem[] {
 
 export function remoteMenu(ctx: RepoCtx, name: string): MenuItem[] {
   const url = ctx.data.remotes.find((r) => r.name === name)?.url ?? ''
-  const web = remoteWebUrl(url)
+  const web = remoteWebUrl(url, ctx.settings.accounts)
   return [
     { label: `Fetch ${name}`, icon: 'fetch', onClick: () => ctx.run('Fetching', () => api.fetch(ctx.path, name, true), `Fetched ${name}`) },
     { label: 'Push all tags', icon: 'tag', onClick: () => ctx.run('Pushing tags', () => api.pushTags(ctx.path, name), `Pushed tags to ${name}`) },

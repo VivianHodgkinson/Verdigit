@@ -12,6 +12,10 @@ import { buildPatch, parseDiff, parseConflicts } from '../src/renderer/src/lib/d
 import { layoutGraph } from '../src/renderer/src/lib/graph'
 import { assetName, installCommand } from '../src/main/updateAsset'
 import { remoteWebUrl } from '../src/renderer/src/format'
+import { remoteWeb } from '../src/shared/hosts'
+import * as providers from '../src/main/providers'
+import type { Account } from '../src/shared/types'
+import { createServer, type IncomingMessage } from 'node:http'
 import { ACCENT_PRESETS, accentVars, luminance, readableAccent } from '../src/renderer/src/lib/accent'
 
 const sh = (cwd: string, cmd: string): string => execSync(cmd, { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 't@x', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 't@x' } })
@@ -155,6 +159,43 @@ async function main(): Promise<void> {
     await assert.rejects(flow.flowFinish(repo, 'feature', 'x', {}), /uncommitted/)
     execSync('git checkout -- VERSION', { cwd: repo })
     await flow.flowFinish(repo, 'feature', 'x', {})
+  })
+
+  await test('starting a release can bump package.json', async () => {
+    const r = join(base, 'pkg')
+    mkdirSync(r)
+    sh(r, 'git init -q -b main && git config user.name Test && git config user.email t@x')
+    writeFileSync(join(r, 'package.json'), '{\r\n    "name": "app",\r\n    "version": "0.1.0"\r\n}\r\n')
+    writeFileSync(join(r, 'package-lock.json'), JSON.stringify({ name: 'app', version: '0.1.0', packages: { '': { name: 'app', version: '0.1.0' } } }, null, 2) + '\n')
+    writeFileSync(join(r, 'other.txt'), 'x\n')
+    sh(r, 'git add -A && git commit -qm init')
+    await flow.flowInit(r, { master: 'main', develop: 'develop', prefix: { ...(await flow.flowConfig(r)).prefix, versiontag: 'v' } })
+    assert.equal(await flow.packageVersion(r), '0.1.0')
+
+    await assert.rejects(flow.flowStart(r, 'release', 'spring', null, { bumpVersion: true }), /isn't a version/)
+    assert.equal((await git.repoState(r)).branch, 'develop')
+
+    // Other uncommitted work is carried over but not swept into the bump commit.
+    writeFileSync(join(r, 'other.txt'), 'changed\n')
+    sh(r, 'git add other.txt')
+    await flow.flowStart(r, 'release', '0.2.0', null, { bumpVersion: true })
+    assert.equal((await git.repoState(r)).branch, 'release/0.2.0')
+    assert.equal(readFileSync(join(r, 'package.json'), 'utf8'), '{\r\n    "name": "app",\r\n    "version": "0.2.0"\r\n}\r\n')
+    const lock = JSON.parse(readFileSync(join(r, 'package-lock.json'), 'utf8'))
+    assert.equal(lock.version, '0.2.0')
+    assert.equal(lock.packages[''].version, '0.2.0')
+    assert.equal((await git.log(r, 1))[0].subject, 'Bump version to 0.2.0')
+    assert.equal(sh(r, 'git show --name-only --format= HEAD').trim().split('\n').sort().join(','), 'package-lock.json,package.json')
+    assert.equal(sh(r, 'git status --porcelain').trim(), 'M  other.txt')
+    sh(r, 'git commit -qm other')
+
+    await flow.flowFinish(r, 'release', '0.2.0', {})
+    assert.equal(await flow.packageVersion(r), '0.2.0')
+    assert.equal(sh(r, 'git show main:package.json').includes('"0.2.0"'), true)
+
+    // Without the option nothing changes.
+    await flow.flowStart(r, 'hotfix', '0.2.1', null)
+    assert.equal(await flow.packageVersion(r), '0.2.0')
   })
 
   await test('flow finish resumes after a merge conflict', async () => {
@@ -358,6 +399,108 @@ async function main(): Promise<void> {
     assert.equal(remoteWebUrl('/home/u/repos/bare.git'), null)
     assert.equal(remoteWebUrl('C:\\repos\\bare.git'), null)
     assert.equal(remoteWebUrl('file:///srv/repo.git'), null)
+  })
+
+  await test('remote web pages follow the host and account', async () => {
+    const accounts: Account[] = [
+      { id: 'git.example.com', provider: 'gitlab', url: 'https://git.example.com:8443/gitlab', user: 'me' },
+      { id: 'forge.example.org', provider: 'gitea', url: 'https://forge.example.org', user: 'me' }
+    ]
+    const w = (url: string) => remoteWeb(accounts, url)
+    assert.equal(w('git@github.com:o/r.git')?.branchUrl?.('feature/a b'), 'https://github.com/o/r/tree/feature/a%20b')
+    assert.equal(w('git@gitlab.com:g/s/r.git')?.branchUrl?.('dev'), 'https://gitlab.com/g/s/r/-/tree/dev')
+    // SSH to a self-hosted server uses the account's port and sub-path; HTTPS keeps its own.
+    assert.equal(w('git@git.example.com:team/app.git')?.web, 'https://git.example.com:8443/gitlab/team/app')
+    assert.equal(w('https://git.example.com:8443/gitlab/team/app.git')?.web, 'https://git.example.com:8443/gitlab/team/app')
+    assert.equal(w('https://forge.example.org/me/app')?.branchUrl?.('main'), 'https://forge.example.org/me/app/src/branch/main')
+    // An unknown host still opens, but there's no branch link to guess.
+    assert.equal(w('git@bitbucket.org:o/r.git')?.web, 'https://bitbucket.org/o/r')
+    assert.equal(w('git@bitbucket.org:o/r.git')?.branchUrl, null)
+  })
+
+  await test('login prompts are answered from the account for that host', async () => {
+    const accounts: Account[] = [
+      { id: 'github.com', provider: 'github', url: 'https://github.com', user: 'octo' },
+      { id: 'gitlab.com', provider: 'gitlab', url: 'https://gitlab.com', user: 'lab' },
+      { id: 'bitbucket.org', provider: 'other', url: 'https://bitbucket.org', user: 'bb' }
+    ]
+    const tokens: Record<string, string> = { 'github.com': 'ghp_x', 'gitlab.com': 'glpat_x', 'bitbucket.org': 'app-pw' }
+    const ask = (p: string) => providers.answerPrompt(p, accounts, (id) => tokens[id] ?? null)
+    assert.equal(ask("Username for 'https://github.com': "), 'x-access-token')
+    assert.equal(ask("Password for 'https://x-access-token@github.com': "), 'ghp_x')
+    assert.equal(ask("Username for 'https://gitlab.com': "), 'lab')
+    assert.equal(ask("Password for 'https://lab@gitlab.com': "), 'glpat_x')
+    assert.equal(ask("Username for 'https://bitbucket.org': "), 'bb')
+    assert.equal(ask("Password for 'https://bb@bitbucket.org': "), 'app-pw')
+    // Lookalike hosts and other prompts go to the user.
+    assert.equal(ask("Password for 'https://github.com.evil.example': "), null)
+    assert.equal(ask("Password for 'https://codeberg.org': "), null)
+    assert.equal(ask("Enter passphrase for key '/home/u/.ssh/id_ed25519': "), null)
+  })
+
+  await test('GitLab, Gitea and GitHub Enterprise API calls', async () => {
+    const seen: { method: string; url: string; auth: string; body: unknown }[] = []
+    const body = (req: IncomingMessage): Promise<string> => new Promise((r) => {
+      let b = ''
+      req.on('data', (c) => (b += c))
+      req.on('end', () => r(b))
+    })
+    const server = createServer(async (req, res) => {
+      const raw = await body(req)
+      seen.push({ method: req.method!, url: req.url!, auth: String(req.headers['private-token'] ?? req.headers.authorization), body: raw ? JSON.parse(raw) : null })
+      const json = (code: number, v: unknown) => {
+        res.writeHead(code, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(v))
+      }
+      const u = req.url!
+      if (u === '/gl/api/v4/user') return req.headers['private-token'] === 'good' ? json(200, { username: 'lab' }) : json(401, { message: '401 Unauthorized' })
+      if (u.startsWith('/gl/api/v4/projects?')) {
+        const page = Number(new URL(u, 'http://x').searchParams.get('page'))
+        const n = page === 1 ? 100 : 3
+        return json(200, Array.from({ length: n }, (_, i) => ({ path_with_namespace: `g/sub/p${page}-${i}`, http_url_to_repo: 'h', ssh_url_to_repo: 's', visibility: i ? 'private' : 'public', description: '', last_activity_at: '2026-10-01T00:00:00Z' })))
+      }
+      if (u === '/gl/api/v4/projects/g%2Fsub%2Fapp/merge_requests') return json(201, { web_url: 'https://gl/g/sub/app/-/merge_requests/1' })
+      if (u === '/gl/api/v4/projects/g%2Fsub%2Fdup/merge_requests') return json(409, { message: ['Another open merge request already exists for this source branch: !1'] })
+      if (u === '/gt/api/v1/user') return json(200, { login: 'tea' })
+      if (u.startsWith('/gt/api/v1/user/repos?')) return json(200, [
+        { full_name: 'tea/old', clone_url: 'h', ssh_url: 's', private: false, description: '', updated_at: '2026-01-01T00:00:00Z' },
+        { full_name: 'tea/new', clone_url: 'h', ssh_url: 's', private: true, description: 'd', updated_at: '2026-09-01T00:00:00Z' }
+      ])
+      if (u === '/gt/api/v1/repos/tea/new/pulls') return json(201, { html_url: 'https://gt/tea/new/pulls/2' })
+      if (u === '/ghe/api/v3/user') return json(200, { login: 'ent' })
+      json(404, { message: 'Not Found' })
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+    try {
+      const gl: Account = { id: '127.0.0.1', provider: 'gitlab', url: `${base}/gl`, user: 'lab' }
+      assert.equal(await providers.verify('gitlab', gl.url, 'good'), 'lab')
+      await assert.rejects(providers.verify('gitlab', gl.url, 'bad'), /GitLab: the token was rejected \(401 Unauthorized\)/)
+      const glRepos = await providers.listRepos(gl, 'good')
+      assert.equal(glRepos.length, 103)
+      assert.equal(glRepos[0].fullName, 'g/sub/p1-0')
+      assert.equal(glRepos[0].private, false)
+      assert.equal(glRepos[1].private, true)
+      const pr = { title: 'Add thing', body: 'Why', head: 'feature/x', base: 'develop', draft: true }
+      assert.equal(await providers.createPullRequest(gl, 'good', 'g/sub/app', pr), 'https://gl/g/sub/app/-/merge_requests/1')
+      const mr = seen.find((x) => x.method === 'POST')!
+      assert.equal(mr.auth, 'good')
+      assert.deepEqual(mr.body, { source_branch: 'feature/x', target_branch: 'develop', title: 'Draft: Add thing', description: 'Why' })
+      await assert.rejects(providers.createPullRequest(gl, 'good', 'g/sub/dup', pr), /GitLab: Another open merge request already exists/)
+
+      const gt: Account = { id: '127.0.0.1', provider: 'gitea', url: `${base}/gt`, user: 'tea' }
+      assert.equal(await providers.verify('gitea', gt.url, 't'), 'tea')
+      assert.deepEqual((await providers.listRepos(gt, 't')).map((r) => r.fullName), ['tea/new', 'tea/old'])
+      assert.equal(await providers.createPullRequest(gt, 't', 'tea/new', { ...pr, draft: false }), 'https://gt/tea/new/pulls/2')
+      const giteaPr = seen.filter((x) => x.method === 'POST').pop()!
+      assert.equal(giteaPr.auth, 'token t')
+      assert.deepEqual(giteaPr.body, { head: 'feature/x', base: 'develop', title: 'Add thing', body: 'Why' })
+
+      assert.equal(await providers.verify('github', `${base}/ghe`, 'e'), 'ent')
+      assert.equal(seen.pop()!.auth, 'Bearer e')
+    } finally {
+      server.close()
+    }
   })
 
   await test('accent colours stay readable in both themes', async () => {

@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { FlowFinishOptions, FlowKind, GitFlowConfig } from '@shared/types'
 import { getConfig, isAncestor, refExists, remotes, repoState, setConfig } from './git'
 import { git, run } from './runner'
@@ -97,7 +99,48 @@ function defaultBase(cfg: GitFlowConfig, kind: FlowKind): string {
   return kind === 'hotfix' || kind === 'support' ? cfg.master : cfg.develop
 }
 
-export async function flowStart(repo: string, kind: FlowKind, name: string, base: string | null): Promise<void> {
+const VERSION_FILES = ['package.json', 'package-lock.json']
+const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+
+/** The version in the repo's root package.json, or null when it has none. */
+export async function packageVersion(repo: string): Promise<string | null> {
+  try {
+    const v = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version
+    return typeof v === 'string' ? v : null
+  } catch {
+    return null
+  }
+}
+
+/** Rewrite a JSON file with `edit` applied, keeping its indentation, line endings and final newline. */
+function editJson(file: string, edit: (json: Record<string, unknown>) => void): void {
+  const text = readFileSync(file, 'utf8')
+  const json = JSON.parse(text)
+  edit(json)
+  const indent = /^[\t ]+(?=")/m.exec(text)?.[0] ?? '  '
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  let out = JSON.stringify(json, null, indent).replace(/\n/g, eol)
+  if (/\r?\n$/.test(text)) out += eol
+  writeFileSync(file, out)
+}
+
+/** Set package.json (and package-lock.json) to `version` and commit just those files, as `npm version` does. */
+async function bumpPackageVersion(repo: string, version: string): Promise<void> {
+  if ((await packageVersion(repo)) === version) return
+  const files = VERSION_FILES.filter((f) => existsSync(join(repo, f)))
+  editJson(join(repo, 'package.json'), (j) => (j.version = version))
+  if (files.includes('package-lock.json')) {
+    editJson(join(repo, 'package-lock.json'), (j) => {
+      j.version = version
+      const root = (j.packages as Record<string, Record<string, unknown>> | undefined)?.['']
+      if (root) root.version = version
+    })
+  }
+  await run(repo, ['add', '--', ...files])
+  await run(repo, ['commit', '-m', `Bump version to ${version}`, '--', ...files])
+}
+
+export async function flowStart(repo: string, kind: FlowKind, name: string, base: string | null, opts: { bumpVersion?: boolean } = {}): Promise<void> {
   const cfg = await requireInit(repo)
   name = name.trim()
   if (!name) throw new Error('A name is required.')
@@ -108,8 +151,16 @@ export async function flowStart(repo: string, kind: FlowKind, name: string, base
     const existing = (await run(repo, ['for-each-ref', '--format=%(refname:short)', `refs/heads/${cfg.prefix[kind]}`], { quiet: true })).trim()
     if (existing) throw new Error(`There is already an open ${kind} branch: ${existing.split('\n')[0]}`)
   }
+  const bump = opts.bumpVersion && (kind === 'release' || kind === 'hotfix')
+  if (bump) {
+    if (!SEMVER.test(name)) throw new Error(`"${name}" isn't a version package.json accepts (like 1.2.3). Use a version number, or untick updating package.json.`)
+    if (!(await packageVersion(repo))) throw new Error('This repository has no package.json with a version.')
+    const dirty = (await run(repo, ['status', '--porcelain', '--', ...VERSION_FILES], { quiet: true })).trim()
+    if (dirty) throw new Error('package.json or package-lock.json has uncommitted changes. Commit or stash them first.')
+  }
   // Uncommitted changes are carried over to the new branch, as with `git checkout -b`.
   await run(repo, ['checkout', '-b', branch, base || defaultBase(cfg, kind)])
+  if (bump) await bumpPackageVersion(repo, name)
 }
 
 export async function flowPublish(repo: string, kind: FlowKind, name: string): Promise<void> {

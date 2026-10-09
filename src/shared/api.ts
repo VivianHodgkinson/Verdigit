@@ -9,7 +9,9 @@ import type {
   FetchInfo,
   FlowKind,
   GitFlowConfig,
-  GitHubRepo,
+  HostedRepo,
+  ProviderKind,
+  RepoHost,
   RebaseTodo,
   Remote,
   RepoState,
@@ -128,14 +130,17 @@ export interface Api {
   // git flow
   flowConfig(repo: string): Promise<GitFlowConfig>
   flowInit(repo: string, config: Omit<GitFlowConfig, 'initialized'>): Promise<void>
-  flowStart(repo: string, kind: FlowKind, name: string, base: string | null): Promise<void>
+  flowStart(repo: string, kind: FlowKind, name: string, base: string | null, opts?: { bumpVersion?: boolean }): Promise<void>
+  packageVersion(repo: string): Promise<string | null>
   flowFinish(repo: string, kind: FlowKind, name: string, opts: FlowFinishOptions): Promise<void>
   flowPublish(repo: string, kind: FlowKind, name: string): Promise<void>
 
-  // github
-  setGitHubToken(token: string | null): Promise<Settings>
-  gitHubRepos(): Promise<GitHubRepo[]>
-  gitHubRemote(repo: string): Promise<{ owner: string; name: string; remote: string } | null>
+  // accounts on git hosts
+  /** Check the token with the host (when it has an API) and save the account, replacing one for the same host */
+  addAccount(account: { provider: ProviderKind; url: string; user: string; token: string }): Promise<Settings>
+  removeAccount(id: string): Promise<Settings>
+  hostedRepos(accountId: string): Promise<HostedRepo[]>
+  repoHost(repo: string): Promise<RepoHost | null>
   createPullRequest(repo: string, pr: { title: string; body: string; head: string; base: string; draft: boolean }): Promise<string>
 }
 

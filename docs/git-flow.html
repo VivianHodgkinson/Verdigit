@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verdigit Git Flow</title>
+<style>
+  :root {
+    --bg: #0f1612; --bg-2: #16201a; --bg-3: #1d2a22; --border: #2a3a30;
+    --text: #e3ebe5; --text-2: #a7b5ab; --accent: #3fb96b; --accent-ink: #06210f;
+    --warn: #e0a83a; --warn-bg: #2a2212; --code: #0b110d;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f8f6; --bg-2: #ffffff; --bg-3: #eef3ef; --border: #d6e0d9;
+      --text: #17221b; --text-2: #55655a; --accent: #16a34a; --accent-ink: #ffffff;
+      --warn: #a16207; --warn-bg: #fdf6e3; --code: #eef3ef;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 820px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  .sub { color: var(--text-2); margin: 0 0 24px; }
+  nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
+  nav a {
+    color: var(--text); text-decoration: none; padding: 5px 12px; border-radius: 999px;
+    background: var(--bg-3); border: 1px solid var(--border); font-size: 13px;
+  }
+  nav a:hover { border-color: var(--accent); }
+  section {
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; margin-bottom: 18px;
+  }
+  h2 { font-size: 18px; margin: 0 0 4px; display: flex; align-items: center; gap: 10px; }
+  h2 .n {
+    background: var(--accent); color: var(--accent-ink); border-radius: 6px;
+    font-size: 13px; padding: 1px 8px; font-weight: 700;
+  }
+  .when { color: var(--text-2); margin: 0 0 12px; font-size: 14px; }
+  ol.steps { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+  ol.steps > li {
+    counter-increment: s; position: relative; padding: 8px 0 8px 40px;
+    border-top: 1px solid var(--border);
+  }
+  ol.steps > li:first-child { border-top: 0; }
+  ol.steps > li label { display: block; cursor: pointer; }
+  ol.steps > li input[type=checkbox] {
+    position: absolute; left: 2px; top: 12px; width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer;
+  }
+  ol.steps > li:has(input:checked) > label { color: var(--text-2); text-decoration: line-through; text-decoration-color: var(--border); }
+  ol.steps ul { margin: 6px 0 0; padding-left: 18px; }
+  .ui {
+    display: inline-block; background: var(--bg-3); border: 1px solid var(--border); border-radius: 5px;
+    padding: 0 6px; font-size: 13px; font-weight: 600; white-space: nowrap;
+  }
+  code { font: 13px ui-monospace, "Cascadia Code", Menlo, monospace; background: var(--code); padding: 1px 5px; border-radius: 4px; }
+  .cmd {
+    display: flex; align-items: center; gap: 8px; margin: 8px 0 2px; background: var(--code);
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; overflow-x: auto;
+  }
+  .cmd code { background: none; padding: 0; flex: 1; white-space: nowrap; }
+  .cmd button {
+    flex: none; background: var(--bg-3); color: var(--text); border: 1px solid var(--border);
+    border-radius: 5px; padding: 2px 10px; font-size: 12px; cursor: pointer;
+  }
+  .cmd button:hover { border-color: var(--accent); }
+  .warn {
+    background: var(--warn-bg); border-left: 3px solid var(--warn); border-radius: 6px;
+    padding: 8px 12px; margin: 10px 0 0; font-size: 14px;
+  }
+  .warn b { color: var(--warn); }
+  .version-box { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; font-size: 14px; }
+  .version-box input {
+    width: 110px; background: var(--code); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; font: 14px ui-monospace, Menlo, monospace;
+  }
+  .version-box input:focus { outline: none; border-color: var(--accent); }
+  .reset { margin-left: auto; background: none; border: 0; color: var(--text-2); cursor: pointer; font-size: 13px; text-decoration: underline; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td { padding: 8px 6px; border-top: 1px solid var(--border); vertical-align: top; }
+  tr:first-child td { border-top: 0; }
+  td:first-child { width: 42%; font-weight: 600; }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; margin: 0 0 24px; color: var(--text-2); }
+  .flow span { background: var(--bg-3); border: 1px solid var(--border); border-radius: 5px; padding: 2px 8px; color: var(--text); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Releasing Verdigit with Git Flow</h1>
+  <p class="sub">Everything here happens in Verdigit, except publishing on GitHub. Tick steps off as you go.</p>
+
+  <div class="flow">
+    <span>feature/…</span> → <span>develop</span> → <span>release/X.Y.Z</span> → <span>main + tag vX.Y.Z</span> → <span>GitHub draft</span> → <span>Publish</span>
+  </div>
+
+  <nav>
+    <a href="#once">One-time check</a>
+    <a href="#feature">1 · Feature</a>
+    <a href="#release">2 · Release</a>
+    <a href="#publish">3 · Publish</a>
+    <a href="#hotfix">Hotfix</a>
+    <a href="#trouble">If something looks off</a>
+  </nav>
+
+  <section id="once">
+    <h2><span class="n">0</span> One-time check</h2>
+    <p class="when">Already done for this repo. Just confirm it if a tag ever comes out wrong.</p>
+    <ol class="steps">
+      <li><input type="checkbox" id="o1"><label for="o1"><span class="ui">Git Flow</span> → <span class="ui">Git Flow settings…</span>. Make sure <b>Version tag prefix</b> is <code>v</code>.</label></li>
+    </ol>
+    <p class="warn"><b>Why it matters:</b> without the prefix the tag is <code>0.2.6</code> instead of <code>v0.2.6</code>, and GitHub Actions only builds tags that start with <code>v</code>.</p>
+  </section>
+
+  <section id="feature">
+    <h2><span class="n">1</span> Build a feature</h2>
+    <p class="when">For each change. Nothing gets released here; it just lands on <code>develop</code>.</p>
+    <ol class="steps">
+      <li><input type="checkbox" id="f1"><label for="f1"><span class="ui">Git Flow</span> → <span class="ui">Start Feature</span>. Enter a short name like <code>auto-fetch</code>, leave <b>Base</b> as <code>develop</code>, and click <span class="ui">Start</span>. You're now on <code>feature/auto-fetch</code>.</label></li>
+      <li><input type="checkbox" id="f2"><label for="f2">Make your changes. Stage them in the right-hand panel, type a <b>Commit summary</b>, and click <span class="ui">Commit</span>. Repeat as often as you like.</label></li>
+      <li><input type="checkbox" id="f3"><label for="f3">When it's done: <span class="ui">Git Flow</span> → <span class="ui">Finish Feature auto-fetch</span>. Keep the defaults, or tick <b>Push develop to remote</b> to push in the same step. Click <span class="ui">Finish</span>.<br>It merges into <code>develop</code> and deletes the feature branch.</label></li>
+      <li><input type="checkbox" id="f4"><label for="f4">If you didn't tick push: click <span class="ui">Push</span> in the toolbar to send <code>develop</code> to GitHub.</label></li>
+    </ol>
+  </section>
+
+  <section id="release">
+    <h2><span class="n">2</span> Make a release</h2>
+    <p class="when">When <code>develop</code> has everything you want to ship.</p>
+    <div class="version-box">
+      <label for="ver">Version for this release:</label>
+      <input id="ver" value="0.2.6" spellcheck="false" autocomplete="off">
+      <span style="color:var(--text-2)">(updates the steps below)</span>
+      <button class="reset" id="reset">Untick all steps</button>
+    </div>
+    <ol class="steps">
+      <li><input type="checkbox" id="r1"><label for="r1">Check out <code>develop</code>: double-click it in the sidebar under <b>Local</b>.</label></li>
+      <li><input type="checkbox" id="r2"><label for="r2"><span class="ui">Git Flow</span> → <span class="ui">Start Release</span>. For <b>Version</b>, type <code class="v">0.2.6</code>, <b>without the v</b> (the prefix adds it). Leave <b>Base</b> as <code>develop</code>.</label></li>
+      <li><input type="checkbox" id="r3"><label for="r3">Keep <b>Update the version in package.json and commit it</b> ticked, and click <span class="ui">Start</span>. Verdigit creates <code>release/<span class="v">0.2.6</span></code>, sets the version in <code>package.json</code> and <code>package-lock.json</code>, and commits it as <code>Bump version to <span class="v">0.2.6</span></code>. Check that commit is at the top of the graph.</label>
+        <p class="warn"><b>Older Verdigit (0.2.5 and earlier)</b> doesn't have the tick box. Click <span class="ui">Terminal</span>, run the command below, then stage both files and commit them as <code>Release <span class="v">0.2.6</span></code>.</p>
+        <div class="cmd"><code id="npmcmd">npm version 0.2.6 --no-git-tag-version</code><button data-copy="npmcmd">Copy</button></div>
+      </li>
+      <li><input type="checkbox" id="r4"><label for="r4">Optional: last-minute fixes for this release can be committed on the release branch now.</label></li>
+      <li><input type="checkbox" id="r5"><label for="r5"><span class="ui">Git Flow</span> → <span class="ui">Finish Release <span class="v">0.2.6</span></span>. In the dialog:
+        <ul>
+          <li><b>Tag message</b>: the default <code>Release <span class="v">0.2.6</span></code> is fine.</li>
+          <li><b>Don't create a tag</b>: leave this <b>unticked</b>.</li>
+          <li><b>Push main, develop and tags to remote</b>: leave this <b>ticked</b>.</li>
+        </ul>
+        Click <span class="ui">Finish</span>. Verdigit merges into <code>main</code> and <code>develop</code>, tags <code>v<span class="v">0.2.6</span></code>, and pushes everything.</label></li>
+    </ol>
+  </section>
+
+  <section id="publish">
+    <h2><span class="n">3</span> Publish on GitHub</h2>
+    <p class="when">The tag push starts the build automatically.</p>
+    <ol class="steps">
+      <li><input type="checkbox" id="p1"><label for="p1">Click <span class="ui">Remote</span> in the toolbar to open GitHub, then go to the <b>Actions</b> tab. Wait for the run on <code>v<span class="v">0.2.6</span></code> to finish, about 10 minutes. Every job should be green, including <b>Draft release</b>.</label></li>
+      <li><input type="checkbox" id="p2"><label for="p2">Go to <b>Releases</b>, open the <b>v<span class="v">0.2.6</span></b> draft, click edit, and paste in your release notes.</label></li>
+      <li><input type="checkbox" id="p3"><label for="p3">Leave <b>Set as a pre-release</b> unticked, keep <b>Set as the latest release</b> ticked, and click <span class="ui">Publish release</span>.</label></li>
+    </ol>
+    <p class="warn"><b>Note:</b> installed copies only see <i>published</i> releases. Until you click Publish, nobody gets the update.</p>
+  </section>
+
+  <section id="hotfix">
+    <h2><span class="n">!</span> Urgent fix to a published version (hotfix)</h2>
+    <p class="when">A bug in the released app that can't wait for the next release.</p>
+    <ol class="steps">
+      <li><input type="checkbox" id="h1"><label for="h1"><span class="ui">Git Flow</span> → <span class="ui">Start Hotfix</span> with the next patch number (e.g. <code>0.2.7</code>). Base is <code>main</code> by default; leave it. Keep <b>Update the version in package.json</b> ticked.</label></li>
+      <li><input type="checkbox" id="h2"><label for="h2">Fix the bug and commit it.</label></li>
+      
+      <li><input type="checkbox" id="h4"><label for="h4"><span class="ui">Git Flow</span> → <span class="ui">Finish Hotfix 0.2.7</span>, with the same options as a release. Then publish it the same way (section 3).</label></li>
+    </ol>
+  </section>
+
+  <section id="trouble">
+    <h2><span class="n">?</span> If something looks off</h2>
+    <table>
+      <tr><td>The tag has no <code>v</code> at the front</td><td>The version tag prefix is blank. See the one-time check. Delete the bad tag (right-click it under <b>Tags</b>) and recreate it as <code>vX.Y.Z</code> on <code>main</code> with the push option ticked.</td></tr>
+      <tr><td>The build ran but no draft appeared</td><td>The tag doesn't start with <code>v</code>, or it was never pushed. Check <b>Tags</b> in the sidebar and on GitHub.</td></tr>
+      <tr><td>The installed app updates but shows the old version number</td><td>The version update was unticked or skipped, so <code>package.json</code> still has the old number. Check for the <code>Bump version</code> commit.</td></tr>
+      <tr><td>Finish Release stops with a merge conflict</td><td>Resolve the files in the right-hand panel, commit, then run <span class="ui">Finish Release</span> again.</td></tr>
+      <tr><td>Actions jobs fail within seconds</td><td>Usually a GitHub billing or account lock, not the code. Check the job log.</td></tr>
+    </table>
+  </section>
+</main>
+<script>
+  const boxes = [...document.querySelectorAll('ol.steps input[type=checkbox]')]
+  const ver = document.getElementById('ver')
+  const store = {
+    get(k) { try { return localStorage.getItem(k) } catch { return null } },
+    set(k, v) { try { localStorage.setItem(k, v) } catch {} }
+  }
+  function applyVersion() {
+    const v = ver.value.trim().replace(/^v/i, '') || '0.2.6'
+    document.querySelectorAll('.v').forEach((el) => (el.textContent = v))
+    document.getElementById('npmcmd').textContent = `npm version ${v} --no-git-tag-version`
+    store.set('gf.version', v)
+  }
+  const saved = store.get('gf.version')
+  if (saved) ver.value = saved
+  ver.addEventListener('input', applyVersion)
+  applyVersion()
+
+  let ticked = []
+  try { ticked = JSON.parse(store.get('gf.ticked') || '[]') } catch {}
+  boxes.forEach((b) => {
+    b.checked = ticked.includes(b.id)
+    b.addEventListener('change', () => store.set('gf.ticked', JSON.stringify(boxes.filter((x) => x.checked).map((x) => x.id))))
+  })
+  document.getElementById('reset').addEventListener('click', () => {
+    boxes.forEach((b) => (b.checked = false))
+    store.set('gf.ticked', '[]')
+  })
+
+  document.querySelectorAll('[data-copy]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(document.getElementById(btn.dataset.copy).textContent)
+        btn.textContent = 'Copied'
+      } catch { btn.textContent = 'Select & copy' }
+      setTimeout(() => (btn.textContent = 'Copy'), 1500)
+    })
+  )
+</script>
+</body>
+</html>

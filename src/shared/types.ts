@@ -138,7 +138,31 @@ export interface BlameLine {
   content: string
 }
 
-export interface GitHubRepo {
+export type ProviderKind = 'github' | 'gitlab' | 'gitea' | 'other'
+
+/** A sign-in to a Git host. The token stays in the main process. */
+export interface Account {
+  /** The host name, lower case: one account per host */
+  id: string
+  provider: ProviderKind
+  /** Server, e.g. https://gitlab.com or https://git.example.com:8443/gitlab */
+  url: string
+  /** Login on the host */
+  user: string
+}
+
+/** Where a repo's remote lives, and the account for it if there is one */
+export interface RepoHost {
+  remote: string
+  host: string
+  /** owner/name, or group/subgroup/name on GitLab */
+  path: string
+  provider: ProviderKind | null
+  account: Account | null
+}
+
+/** A repository listed from a host's API, for cloning */
+export interface HostedRepo {
   fullName: string
   cloneUrl: string
   sshUrl: string
@@ -152,8 +176,8 @@ export interface Settings {
   openTabs: string[]
   activeTab: string | null
   cloneDir: string
-  gitHubUser: string | null
-  hasGitHubToken: boolean
+  /** Git host sign-ins (tokens are not included) */
+  accounts: Account[]
   pullMode: 'merge' | 'rebase' | 'ff-only'
   /** Fetch open repos in the background every this many minutes; 0 is off */
   autoFetchMinutes: number
