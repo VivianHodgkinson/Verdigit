@@ -468,6 +468,7 @@ export async function flowStart(ctx: RepoCtx, kind: FlowKind): Promise<void> {
   const isVersion = kind === 'release' || kind === 'hotfix' || kind === 'support'
   const latestTag = ctx.data.tags[0]?.name
   const baseDefault = kind === 'hotfix' ? f.master : kind === 'support' ? latestTag ?? f.master : f.develop
+  const pkgVersion = kind === 'release' || kind === 'hotfix' ? await api.packageVersion(ctx.path).catch(() => null) : null
   const v = await ctx.ui.form({
     title: `Start ${FLOW_LABEL[kind]}`,
     icon: kind,
@@ -480,13 +481,16 @@ export async function flowStart(ctx: RepoCtx, kind: FlowKind): Promise<void> {
         placeholder: isVersion ? (latestTag ? `after ${latestTag}` : '1.0.0') : 'my-change',
         hint: `Branch: ${f.prefix[kind]}<name>`
       },
-      { name: 'base', label: 'Base', value: baseDefault, mono: true, hint: kind === 'support' ? 'Usually a release tag' : undefined }
+      { name: 'base', label: 'Base', value: baseDefault, mono: true, hint: kind === 'support' ? 'Usually a release tag' : undefined },
+      ...(pkgVersion !== null
+        ? [{ name: 'bump', label: `Update the version in package.json (now ${pkgVersion}) and commit it`, type: 'checkbox' as const, value: true }]
+        : [])
     ],
     submitLabel: 'Start'
   })
   if (!v) return
   const name = String(v.name).trim().replace(/\s+/g, '-')
-  await ctx.run('Starting ' + kind, () => api.flowStart(ctx.path, kind, name, v.base.trim() || null), `Started ${f.prefix[kind]}${name}`)
+  await ctx.run('Starting ' + kind, () => api.flowStart(ctx.path, kind, name, v.base.trim() || null, { bumpVersion: !!v.bump }), `Started ${f.prefix[kind]}${name}`)
 }
 
 export async function flowFinish(ctx: RepoCtx, kind: FlowKind, name: string): Promise<void> {
