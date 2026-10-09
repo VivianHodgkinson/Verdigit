@@ -3,12 +3,13 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { join, normalize, resolve } from 'node:path'
 import type { Api, ApiMethod, IpcResult } from '@shared/api'
-import type { AskPassRequest } from '@shared/types'
+import type { Account, AskPassRequest, RepoHost } from '@shared/types'
+import { accountForHost, hostOf, normaliseServerUrl, parseRemoteUrl, PROVIDERS, providerForHost } from '@shared/hosts'
 import { startAskPass, stopAskPass } from './askpass'
 import * as autofetch from './autofetch'
 import * as git from './git'
 import * as flow from './gitflow'
-import * as github from './github'
+import * as providers from './providers'
 import { findGit } from './gitpath'
 import { configureRunner, gitBinary, resetGitBinary, run } from './runner'
 import * as store from './store'
@@ -151,10 +152,29 @@ function openTerminal(dir: string): Promise<void> {
 
 // ---------------------------------------------------------------- api
 
-function requireToken(): string {
-  const t = store.getGitHubToken()
-  if (!t) throw new Error('Add a GitHub personal access token in Settings first.')
+function requireToken(account: Account): string {
+  const t = store.getToken(account.id)
+  if (!t) throw new Error(`Sign in to ${account.url} again in Settings → Accounts.`)
   return t
+}
+
+function requireAccount(id: string): Account {
+  const a = store.getSettings().accounts.find((x) => x.id === id)
+  if (!a) throw new Error('That account has been removed. Add it again in Settings → Accounts.')
+  return a
+}
+
+/** The remote a repo's pull requests go to (upstream, then origin, then any), with its host and account. */
+async function repoHost(repo: string): Promise<RepoHost | null> {
+  const accounts = store.getSettings().accounts
+  const rs = await git.remotes(repo)
+  const ordered = [...rs.filter((r) => r.name === 'upstream'), ...rs.filter((r) => r.name === 'origin'), ...rs]
+  const found = ordered
+    .map((r) => ({ remote: r.name, parsed: parseRemoteUrl(r.url) }))
+    .filter((r): r is { remote: string; parsed: { host: string; path: string } } => !!r.parsed)
+    .map(({ remote, parsed }) => ({ remote, ...parsed, provider: providerForHost(accounts, parsed.host), account: accountForHost(accounts, parsed.host) }))
+  // Prefer a remote Verdigit can open pull requests on.
+  return found.find((r) => r.account && PROVIDERS[r.account.provider].hasApi) ?? found.find((r) => r.provider) ?? found[0] ?? null
 }
 
 const api: Api = {
@@ -303,17 +323,26 @@ const api: Api = {
   flowFinish: flow.flowFinish,
   flowPublish: flow.flowPublish,
 
-  setGitHubToken: async (token) => {
-    if (!token) return store.setGitHubToken(null, null)
-    const user = await github.getUser(token.trim())
-    return store.setGitHubToken(token.trim(), user)
+  addAccount: async ({ provider, url, user, token }) => {
+    const server = normaliseServerUrl(url)
+    const id = hostOf(server)
+    if (!id) throw new Error('Enter the server address, like gitlab.example.com.')
+    if (!token.trim()) throw new Error('Enter a token.')
+    let login = user.trim()
+    if (PROVIDERS[provider].hasApi) login = await providers.verify(provider, server, token.trim())
+    else if (!login) throw new Error('Enter your user name on this host.')
+    return store.saveAccount({ id, provider, url: server, user: login }, token.trim())
   },
-  gitHubRepos: async () => github.listRepos(requireToken()),
-  gitHubRemote: github.gitHubRemote,
+  removeAccount: async (id) => store.removeAccount(id),
+  hostedRepos: async (accountId) => {
+    const account = requireAccount(accountId)
+    return providers.listRepos(account, requireToken(account))
+  },
+  repoHost,
   createPullRequest: async (repo, pr) => {
-    const remote = await github.gitHubRemote(repo)
-    if (!remote) throw new Error('No GitHub remote found for this repository.')
-    return github.createPullRequest(requireToken(), remote.owner, remote.name, pr)
+    const host = await repoHost(repo)
+    if (!host?.account) throw new Error('Add an account for this repository\'s host in Settings first.')
+    return providers.createPullRequest(host.account, requireToken(host.account), host.path, pr)
   }
 }
 
@@ -338,11 +367,8 @@ ipcMain.on('askpass:respond', (_e, id: number, value: string | null) => {
 })
 
 async function askPass(prompt: string, background: boolean): Promise<string | null> {
-  const token = store.getGitHubToken()
-  if (token && /github\.com/i.test(prompt)) {
-    if (/^username/i.test(prompt)) return 'x-access-token'
-    if (/^password/i.test(prompt)) return token
-  }
+  const answer = providers.answerPrompt(prompt, store.getSettings().accounts, store.getToken)
+  if (answer) return answer
   // Background fetches never pop up a dialog; the fetch fails and is retried on the next pass.
   if (!win || background) return null
   const req: AskPassRequest = { id: ++askId, prompt }

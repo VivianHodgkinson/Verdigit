@@ -1,4 +1,5 @@
-import type { ChangeType } from '@shared/types'
+import type { Account, ChangeType } from '@shared/types'
+import { remoteWeb } from '@shared/hosts'
 
 /** Graph lane colour as a CSS variable, so it follows the theme (palettes live in styles.css). */
 export const laneColor = (i: number): string => `var(--lane-${i % 12})`
@@ -40,13 +41,8 @@ export function repoNameFromUrl(url: string): string {
 }
 
 /** Browser URL for a remote's clone URL (https, ssh:// or scp-style), or null for local paths. */
-export function remoteWebUrl(url: string): string | null {
-  const u = url.trim().replace(/\.git\/?$/, '').replace(/\/+$/, '')
-  const m =
-    /^(?:https?|ssh|git):\/\/(?:[^@/]+@)?([^/:]+)(?::\d+)?\/(.+)$/.exec(u) ?? // scheme://[user@]host[:port]/path
-    /^(?:[^@/]+@)?([^/:]+):(?!\/)(.+)$/.exec(u) // [user@]host:path
-  if (!m || !m[1].includes('.')) return null
-  return `https://${m[1]}/${m[2]}`
+export function remoteWebUrl(url: string, accounts: Account[] = []): string | null {
+  return remoteWeb(accounts, url)?.web ?? null
 }
 
 export function copy(text: string): void {
