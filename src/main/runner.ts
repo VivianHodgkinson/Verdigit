@@ -60,6 +60,20 @@ export function resetGitBinary(): void {
   binary = null
 }
 
+/** Non-quiet git commands currently running, per working directory. */
+const running = new Map<string, number>()
+
+/** Whether a user-visible git command (fetch, pull, rebase…) is running in this repo right now. */
+export function isBusy(cwd: string): boolean {
+  return (running.get(cwd) ?? 0) > 0
+}
+
+function track(cwd: string, delta: number): void {
+  const n = (running.get(cwd) ?? 0) + delta
+  if (n > 0) running.set(cwd, n)
+  else running.delete(cwd)
+}
+
 /** Run `git <args>` in `cwd`. Output is decoded as UTF-8. */
 export function git(cwd: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
   const start = Date.now()
@@ -90,6 +104,12 @@ export function git(cwd: string, args: string[], opts: RunOptions = {}): Promise
       },
       windowsHide: true
     })
+    let tracked = !opts.quiet
+    if (tracked) track(cwd, 1)
+    const untrack = (): void => {
+      if (tracked) track(cwd, -1)
+      tracked = false
+    }
     const out: Buffer[] = []
     const err: Buffer[] = []
     child.stdout.on('data', (d: Buffer) => out.push(d))
@@ -98,12 +118,14 @@ export function git(cwd: string, args: string[], opts: RunOptions = {}): Promise
       opts.onStderr?.(d.toString('utf8'))
     })
     child.on('error', (e: NodeJS.ErrnoException) => {
+      untrack()
       if (e.code === 'ENOENT') {
         resetGitBinary()
         reject(new GitError(GIT_MISSING, null, ''))
       } else reject(new GitError(`Failed to run git: ${e.message}`, null, ''))
     })
     child.on('close', (code) => {
+      untrack()
       const stdout = Buffer.concat(out).toString('utf8')
       const stderr = Buffer.concat(err).toString('utf8')
       if (!opts.quiet) {

@@ -11,6 +11,6 @@ export const api = new Proxy({} as Api, {
     }
 })
 
-export function on<T>(channel: 'repo:changed' | 'git:log' | 'askpass:request' | 'progress' | 'update:status', cb: (payload: T) => void): () => void {
+export function on<T>(channel: 'repo:changed' | 'repo:fetched' | 'git:log' | 'askpass:request' | 'progress' | 'update:status', cb: (payload: T) => void): () => void {
   return window.bridge.on(channel, cb as (p: unknown) => void)
 }

@@ -442,6 +442,8 @@ button {
 .tab .icon-btn {
   width: 18px;
   height: 18px;
+  margin-left: auto;
+  flex: none;
   opacity: 0;
 }
 .tab:hover .icon-btn,
@@ -510,6 +512,13 @@ button {
 .statusbar button.item:hover {
   background: var(--bg-3);
   color: var(--text);
+}
+.statusbar .item.fetch {
+  flex: none;
+  white-space: nowrap;
+}
+.statusbar .item.warn {
+  color: var(--warn);
 }
 .statusbar .busy {
   color: var(--accent);
