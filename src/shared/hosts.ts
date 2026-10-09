@@ -39,7 +39,7 @@ export const PROVIDERS: Record<ProviderKind, ProviderInfo> = {
     hasApi: true,
     tokenPage: (url) => `${url}/-/user_settings/personal_access_tokens`,
     tokenHint:
-      'A fine-grained token with Code (Download, Push) and Merge Request (Create) on your projects, and User (Read) and Project (Read) on the User tab. Or a legacy token with the api scope.',
+      "A legacy personal access token with the api scope. GitLab's fine-grained tokens can't currently clone or push over HTTPS (they ask for a Code: Download permission the token form doesn't offer).",
     tokenPlaceholder: 'glpat-…',
     branchPath: (b) => `/-/tree/${enc(b)}`
   },
