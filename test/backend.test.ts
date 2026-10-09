@@ -157,6 +157,43 @@ async function main(): Promise<void> {
     await flow.flowFinish(repo, 'feature', 'x', {})
   })
 
+  await test('starting a release can bump package.json', async () => {
+    const r = join(base, 'pkg')
+    mkdirSync(r)
+    sh(r, 'git init -q -b main && git config user.name Test && git config user.email t@x')
+    writeFileSync(join(r, 'package.json'), '{\r\n    "name": "app",\r\n    "version": "0.1.0"\r\n}\r\n')
+    writeFileSync(join(r, 'package-lock.json'), JSON.stringify({ name: 'app', version: '0.1.0', packages: { '': { name: 'app', version: '0.1.0' } } }, null, 2) + '\n')
+    writeFileSync(join(r, 'other.txt'), 'x\n')
+    sh(r, 'git add -A && git commit -qm init')
+    await flow.flowInit(r, { master: 'main', develop: 'develop', prefix: { ...(await flow.flowConfig(r)).prefix, versiontag: 'v' } })
+    assert.equal(await flow.packageVersion(r), '0.1.0')
+
+    await assert.rejects(flow.flowStart(r, 'release', 'spring', null, { bumpVersion: true }), /isn't a version/)
+    assert.equal((await git.repoState(r)).branch, 'develop')
+
+    // Other uncommitted work is carried over but not swept into the bump commit.
+    writeFileSync(join(r, 'other.txt'), 'changed\n')
+    sh(r, 'git add other.txt')
+    await flow.flowStart(r, 'release', '0.2.0', null, { bumpVersion: true })
+    assert.equal((await git.repoState(r)).branch, 'release/0.2.0')
+    assert.equal(readFileSync(join(r, 'package.json'), 'utf8'), '{\r\n    "name": "app",\r\n    "version": "0.2.0"\r\n}\r\n')
+    const lock = JSON.parse(readFileSync(join(r, 'package-lock.json'), 'utf8'))
+    assert.equal(lock.version, '0.2.0')
+    assert.equal(lock.packages[''].version, '0.2.0')
+    assert.equal((await git.log(r, 1))[0].subject, 'Bump version to 0.2.0')
+    assert.equal(sh(r, 'git show --name-only --format= HEAD').trim().split('\n').sort().join(','), 'package-lock.json,package.json')
+    assert.equal(sh(r, 'git status --porcelain').trim(), 'M  other.txt')
+    sh(r, 'git commit -qm other')
+
+    await flow.flowFinish(r, 'release', '0.2.0', {})
+    assert.equal(await flow.packageVersion(r), '0.2.0')
+    assert.equal(sh(r, 'git show main:package.json').includes('"0.2.0"'), true)
+
+    // Without the option nothing changes.
+    await flow.flowStart(r, 'hotfix', '0.2.1', null)
+    assert.equal(await flow.packageVersion(r), '0.2.0')
+  })
+
   await test('flow finish resumes after a merge conflict', async () => {
     await flow.flowStart(repo, 'feature', 'clash', null)
     writeFileSync(join(repo, 'VERSION'), 'feature\n')

@@ -128,7 +128,8 @@ export interface Api {
   // git flow
   flowConfig(repo: string): Promise<GitFlowConfig>
   flowInit(repo: string, config: Omit<GitFlowConfig, 'initialized'>): Promise<void>
-  flowStart(repo: string, kind: FlowKind, name: string, base: string | null): Promise<void>
+  flowStart(repo: string, kind: FlowKind, name: string, base: string | null, opts?: { bumpVersion?: boolean }): Promise<void>
+  packageVersion(repo: string): Promise<string | null>
   flowFinish(repo: string, kind: FlowKind, name: string, opts: FlowFinishOptions): Promise<void>
   flowPublish(repo: string, kind: FlowKind, name: string): Promise<void>
 

@@ -299,6 +299,7 @@ const api: Api = {
   flowConfig: flow.flowConfig,
   flowInit: flow.flowInit,
   flowStart: flow.flowStart,
+  packageVersion: flow.packageVersion,
   flowFinish: flow.flowFinish,
   flowPublish: flow.flowPublish,
 

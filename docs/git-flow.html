@@ -91,7 +91,7 @@
 <body>
 <main>
   <h1>Releasing Verdigit with Git Flow</h1>
-  <p class="sub">Everything here happens in Verdigit, except the version bump (one terminal command) and publishing on GitHub. Tick steps off as you go.</p>
+  <p class="sub">Everything here happens in Verdigit, except publishing on GitHub. Tick steps off as you go.</p>
 
   <div class="flow">
     <span>feature/…</span> → <span>develop</span> → <span>release/X.Y.Z</span> → <span>main + tag vX.Y.Z</span> → <span>GitHub draft</span> → <span>Publish</span>
@@ -137,12 +137,12 @@
     </div>
     <ol class="steps">
       <li><input type="checkbox" id="r1"><label for="r1">Check out <code>develop</code>: double-click it in the sidebar under <b>Local</b>.</label></li>
-      <li><input type="checkbox" id="r2"><label for="r2"><span class="ui">Git Flow</span> → <span class="ui">Start Release</span>. For <b>Version</b>, type <code class="v">0.2.6</code>, <b>without the v</b> (the prefix adds it). Leave <b>Base</b> as <code>develop</code> and click <span class="ui">Start</span>.</label></li>
-      <li><input type="checkbox" id="r3"><label for="r3"><b>Bump the version.</b> This is the step that's easy to forget. Click <span class="ui">Terminal</span> in the toolbar and run:</label>
+      <li><input type="checkbox" id="r2"><label for="r2"><span class="ui">Git Flow</span> → <span class="ui">Start Release</span>. For <b>Version</b>, type <code class="v">0.2.6</code>, <b>without the v</b> (the prefix adds it). Leave <b>Base</b> as <code>develop</code>.</label></li>
+      <li><input type="checkbox" id="r3"><label for="r3">Keep <b>Update the version in package.json and commit it</b> ticked, and click <span class="ui">Start</span>. Verdigit creates <code>release/<span class="v">0.2.6</span></code>, sets the version in <code>package.json</code> and <code>package-lock.json</code>, and commits it as <code>Bump version to <span class="v">0.2.6</span></code>. Check that commit is at the top of the graph.</label>
+        <p class="warn"><b>Older Verdigit (0.2.5 and earlier)</b> doesn't have the tick box. Click <span class="ui">Terminal</span>, run the command below, then stage both files and commit them as <code>Release <span class="v">0.2.6</span></code>.</p>
         <div class="cmd"><code id="npmcmd">npm version 0.2.6 --no-git-tag-version</code><button data-copy="npmcmd">Copy</button></div>
-        This updates <code>package.json</code> and <code>package-lock.json</code> without committing or tagging. Close the terminal afterwards.
       </li>
-      <li><input type="checkbox" id="r4"><label for="r4">Back in Verdigit, both files show under <b>Unstaged files</b>. Click <span class="ui">Stage all</span>, type <code>Release <span class="v">0.2.6</span></code> as the summary, and click <span class="ui">Commit 2 files</span>.</label></li>
+      <li><input type="checkbox" id="r4"><label for="r4">Optional: last-minute fixes for this release can be committed on the release branch now.</label></li>
       <li><input type="checkbox" id="r5"><label for="r5"><span class="ui">Git Flow</span> → <span class="ui">Finish Release <span class="v">0.2.6</span></span>. In the dialog:
         <ul>
           <li><b>Tag message</b>: the default <code>Release <span class="v">0.2.6</span></code> is fine.</li>
@@ -168,9 +168,9 @@
     <h2><span class="n">!</span> Urgent fix to a published version (hotfix)</h2>
     <p class="when">A bug in the released app that can't wait for the next release.</p>
     <ol class="steps">
-      <li><input type="checkbox" id="h1"><label for="h1"><span class="ui">Git Flow</span> → <span class="ui">Start Hotfix</span> with the next patch number (e.g. <code>0.2.7</code>). Base is <code>main</code> by default; leave it.</label></li>
+      <li><input type="checkbox" id="h1"><label for="h1"><span class="ui">Git Flow</span> → <span class="ui">Start Hotfix</span> with the next patch number (e.g. <code>0.2.7</code>). Base is <code>main</code> by default; leave it. Keep <b>Update the version in package.json</b> ticked.</label></li>
       <li><input type="checkbox" id="h2"><label for="h2">Fix the bug and commit it.</label></li>
-      <li><input type="checkbox" id="h3"><label for="h3">Bump the version exactly as in release step 3 (<code>npm version 0.2.7 --no-git-tag-version</code>), then stage and commit.</label></li>
+      
       <li><input type="checkbox" id="h4"><label for="h4"><span class="ui">Git Flow</span> → <span class="ui">Finish Hotfix 0.2.7</span>, with the same options as a release. Then publish it the same way (section 3).</label></li>
     </ol>
   </section>
@@ -180,7 +180,7 @@
     <table>
       <tr><td>The tag has no <code>v</code> at the front</td><td>The version tag prefix is blank. See the one-time check. Delete the bad tag (right-click it under <b>Tags</b>) and recreate it as <code>vX.Y.Z</code> on <code>main</code> with the push option ticked.</td></tr>
       <tr><td>The build ran but no draft appeared</td><td>The tag doesn't start with <code>v</code>, or it was never pushed. Check <b>Tags</b> in the sidebar and on GitHub.</td></tr>
-      <tr><td>The installed app updates but shows the old version number</td><td>The <code>npm version</code> step was skipped, so <code>package.json</code> still has the old number.</td></tr>
+      <tr><td>The installed app updates but shows the old version number</td><td>The version update was unticked or skipped, so <code>package.json</code> still has the old number. Check for the <code>Bump version</code> commit.</td></tr>
       <tr><td>Finish Release stops with a merge conflict</td><td>Resolve the files in the right-hand panel, commit, then run <span class="ui">Finish Release</span> again.</td></tr>
       <tr><td>Actions jobs fail within seconds</td><td>Usually a GitHub billing or account lock, not the code. Check the job log.</td></tr>
     </table>
