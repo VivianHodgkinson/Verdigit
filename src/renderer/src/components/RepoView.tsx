@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import type { Settings } from '@shared/types'
-import { createBranch, createPullRequest, fetchAll, flowMenu, openRemote, openRemoteMenu, pull, push, stash, stashPop } from '../actions'
+import { createBranch, createPullRequest, fetchAll, flowMenu, openRemote, openRemoteMenu, pull, pullRequestNoun, push, stash, stashPop } from '../actions'
 import { api } from '../api'
 import { relTime, short } from '../format'
 import { RepoProvider, useRepo, useRepoController } from '../repo'
@@ -282,6 +282,7 @@ function Toolbar({
   const ctx = useRepo()
   const { state, stashes, remotes } = ctx.data
   const hasRemote = remotes.length > 0
+  const prNoun = pullRequestNoun(ctx)
   const busy = !!ctx.busy
 
   const pullMenu = (e: MouseEvent): void => {
@@ -313,7 +314,13 @@ function Toolbar({
       <Tool icon="pop" label="Pop" onClick={() => stashPop(ctx)} badge={stashes.length} disabled={busy || !stashes.length} />
       <div className="sep" />
       <Tool icon="flow" label="Git Flow" onClick={(e) => ctx.ui.menu(below(e), flowMenu(ctx))} disabled={busy} />
-      <Tool icon="pr" label="Pull Request" onClick={() => createPullRequest(ctx)} disabled={busy || !hasRemote} title={ctx.settings.hasGitHubToken ? 'Create a GitHub pull request' : 'Add a GitHub token in Settings to create pull requests'} />
+      <Tool
+        icon="pr"
+        label={prNoun === 'merge request' ? 'Merge Request' : 'Pull Request'}
+        onClick={() => createPullRequest(ctx)}
+        disabled={busy || !hasRemote}
+        title={`Create a ${prNoun}`}
+      />
       <Tool
         icon="external"
         label="Remote"

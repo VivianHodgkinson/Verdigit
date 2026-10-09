@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Commit, GitHubRepo, RebaseAction, RebaseTodo, Settings, Theme } from '@shared/types'
+import type { Account, Commit, HostedRepo, ProviderKind, RebaseAction, RebaseTodo, Settings, Theme } from '@shared/types'
+import { hostOf, normaliseServerUrl, PROVIDERS } from '@shared/hosts'
 import { api, on } from '../api'
 import { relTime, repoNameFromUrl, short } from '../format'
 import { ACCENT_PRESETS, accentSwatch } from '../lib/accent'
@@ -96,6 +97,7 @@ export function RebaseDialog({ base, commits, done }: { base: Commit; commits: C
 
 export function PullRequestDialog({
   repo,
+  noun,
   head,
   bases,
   defaultBase,
@@ -103,6 +105,8 @@ export function PullRequestDialog({
   done
 }: {
   repo: string
+  /** "pull request", or "merge request" on GitLab */
+  noun: string
   head: string
   bases: string[]
   defaultBase: string | null
@@ -125,7 +129,7 @@ export function PullRequestDialog({
 
   return (
     <Dialog
-      title="Create pull request"
+      title={`Create ${noun}`}
       icon="pr"
       width={580}
       onClose={() => done(null)}
@@ -133,7 +137,7 @@ export function PullRequestDialog({
         <>
           <button className="btn" onClick={() => done(null)}>Cancel</button>
           <button className="btn primary" disabled={!title.trim()} onClick={() => done({ title, body, base, draft })}>
-            Create pull request
+            Create {noun}
           </button>
         </>
       }
@@ -167,32 +171,48 @@ export function PullRequestDialog({
 
 // ---------------------------------------------------------------- clone
 
+/** "GitLab", or "GitLab (git.example.com)" when it isn't the public site or there are two of a kind. */
+function accountTabLabel(a: Account, all: Account[]): string {
+  const label = PROVIDERS[a.provider].label.split(' /')[0]
+  const isDefault = a.url === PROVIDERS[a.provider].defaultUrl
+  const twins = all.filter((x) => x.provider === a.provider).length > 1
+  return isDefault && !twins ? label : `${label} (${a.id})`
+}
+
 export function CloneDialog({ settings, done }: { settings: Settings; done: (path: string | null) => void }) {
   const ui = useUI()
-  const [tab, setTab] = useState<'url' | 'github'>(settings.hasGitHubToken ? 'github' : 'url')
+  // One tab per account that can list repositories, then the plain URL tab.
+  const browsable = settings.accounts.filter((a) => PROVIDERS[a.provider].hasApi)
+  const [tab, setTab] = useState<string>(browsable[0]?.id ?? 'url')
   const [url, setUrl] = useState('')
   const [parent, setParent] = useState(settings.cloneDir)
   const [name, setName] = useState('')
   const [nameTouched, setNameTouched] = useState(false)
-  const [repos, setRepos] = useState<GitHubRepo[] | null>(null)
+  const [repos, setRepos] = useState<Record<string, HostedRepo[]>>({})
   const [filter, setFilter] = useState('')
   const [useSsh, setUseSsh] = useState(false)
   const [progress, setProgress] = useState<string | null>(null)
+  const account = browsable.find((a) => a.id === tab) ?? null
+  const accountRepos = account ? repos[account.id] ?? null : null
 
   useEffect(() => {
-    if (tab === 'github' && settings.hasGitHubToken && repos === null) {
-      api.gitHubRepos().then(setRepos, (e) => {
-        setRepos([])
-        ui.toast(e.message, 'error')
-      })
+    if (account && !(account.id in repos)) {
+      const id = account.id
+      api.hostedRepos(id).then(
+        (list) => setRepos((r) => ({ ...r, [id]: list })),
+        (e) => {
+          setRepos((r) => ({ ...r, [id]: [] }))
+          ui.toast(e.message, 'error')
+        }
+      )
     }
-  }, [tab, settings.hasGitHubToken, repos, ui])
+  }, [account, repos, ui])
 
   useEffect(() => {
     if (!nameTouched) setName(url ? repoNameFromUrl(url) : '')
   }, [url, nameTouched])
 
-  const filtered = useMemo(() => (repos ?? []).filter((r) => r.fullName.toLowerCase().includes(filter.toLowerCase())), [repos, filter])
+  const filtered = useMemo(() => (accountRepos ?? []).filter((r) => r.fullName.toLowerCase().includes(filter.toLowerCase())), [accountRepos, filter])
   const sep = window.bridge.platform === 'win32' ? '\\' : '/'
   const target = parent && name ? `${parent.replace(/[\\/]$/, '')}${sep}${name}` : ''
 
@@ -234,48 +254,50 @@ export function CloneDialog({ settings, done }: { settings: Settings; done: (pat
       }
     >
       <div className="seg">
-        <button className={tab === 'github' ? 'on' : ''} onClick={() => setTab('github')}>GitHub</button>
+        {browsable.map((a) => (
+          <button key={a.id} className={tab === a.id ? 'on' : ''} onClick={() => setTab(a.id)} title={`${a.user} on ${a.url}`}>
+            {accountTabLabel(a, browsable)}
+          </button>
+        ))}
         <button className={tab === 'url' ? 'on' : ''} onClick={() => setTab('url')}>URL</button>
       </div>
-      {tab === 'github' &&
-        (settings.hasGitHubToken ? (
-          <>
-            <div className="field-row">
-              <input className="input" placeholder="Filter your repositories…" value={filter} onChange={(e) => setFilter(e.target.value)} autoFocus />
-              <label className="checkbox" style={{ whiteSpace: 'nowrap' }}>
-                <input type="checkbox" checked={useSsh} onChange={(e) => setUseSsh(e.target.checked)} /> SSH
-              </label>
-            </div>
-            <div className="list-box">
-              {repos === null && (
-                <div className="li row dim">
-                  <span className="spinner" /> Loading repositories…
-                </div>
-              )}
-              {filtered.map((r) => {
-                const u = useSsh ? r.sshUrl : r.cloneUrl
-                return (
-                  <div key={r.fullName} className={`li${url === u ? ' on' : ''}`} onClick={() => setUrl(u)} onDoubleClick={() => setUrl(u)}>
-                    <div className="row">
-                      <Icon name="repo" size={14} />
-                      <b>{r.fullName}</b>
-                      {r.private && <span className="lock">private</span>}
-                      <span className="grow" />
-                      <span className="faint" style={{ fontSize: 11 }}>{relTime(Date.parse(r.updatedAt) / 1000)}</span>
-                    </div>
-                    {r.description && <div className="d ellipsis">{r.description}</div>}
+      {account && (
+        <>
+          <div className="field-row">
+            <input className="input" placeholder="Filter your repositories…" value={filter} onChange={(e) => setFilter(e.target.value)} autoFocus />
+            <label className="checkbox" style={{ whiteSpace: 'nowrap' }}>
+              <input type="checkbox" checked={useSsh} onChange={(e) => setUseSsh(e.target.checked)} /> SSH
+            </label>
+          </div>
+          <div className="list-box">
+            {accountRepos === null && (
+              <div className="li row dim">
+                <span className="spinner" /> Loading repositories…
+              </div>
+            )}
+            {filtered.map((r) => {
+              const u = useSsh ? r.sshUrl : r.cloneUrl
+              return (
+                <div key={r.fullName} className={`li${url === u ? ' on' : ''}`} onClick={() => setUrl(u)} onDoubleClick={() => setUrl(u)}>
+                  <div className="row">
+                    <Icon name="repo" size={14} />
+                    <b>{r.fullName}</b>
+                    {r.private && <span className="lock">private</span>}
+                    <span className="grow" />
+                    <span className="faint" style={{ fontSize: 11 }}>{relTime(Date.parse(r.updatedAt) / 1000)}</span>
                   </div>
-                )
-              })}
-              {repos && !filtered.length && <div className="li faint">No repositories match.</div>}
-            </div>
-          </>
-        ) : (
-          <div className="dialog-desc">Add a GitHub personal access token in Settings to browse your repositories. You can still clone any URL.</div>
-        ))}
+                  {r.description && <div className="d ellipsis">{r.description}</div>}
+                </div>
+              )
+            })}
+            {accountRepos && !filtered.length && <div className="li faint">No repositories match.</div>}
+          </div>
+        </>
+      )}
+      {!browsable.length && <div className="dialog-desc">Add a GitHub, GitLab or Gitea account in Settings to browse your repositories. You can still clone any URL.</div>}
       <div className="field">
         <label>Repository URL</label>
-        <input className="input mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/owner/repo.git" autoFocus={tab === 'url'} spellCheck={false} />
+        <input className="input mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://host/owner/repo.git" autoFocus={tab === 'url'} spellCheck={false} />
       </div>
       <div className="field">
         <label>Clone into</label>
@@ -348,11 +370,128 @@ function AccentPicker({ settings, onChange }: { settings: Settings; onChange: (a
   )
 }
 
+// ---------------------------------------------------------------- accounts
+
+/** Sign-ins to Git hosts: the list, and a form to add one. Changes save immediately. */
+function AccountsSection({ settings, onChange }: { settings: Settings; onChange: (s: Settings) => void }) {
+  const ui = useUI()
+  const [adding, setAdding] = useState(false)
+  const [provider, setProvider] = useState<ProviderKind>('github')
+  const [url, setUrl] = useState(PROVIDERS.github.defaultUrl)
+  const [user, setUser] = useState('')
+  const [token, setToken] = useState('')
+  const [busy, setBusy] = useState(false)
+  const info = PROVIDERS[provider]
+
+  const pick = (p: ProviderKind): void => {
+    // Keep a server the user typed; swap one that was just the previous provider's default.
+    if (!url.trim() || url === PROVIDERS[provider].defaultUrl) setUrl(PROVIDERS[p].defaultUrl)
+    setProvider(p)
+  }
+
+  const reset = (): void => {
+    setAdding(false)
+    setProvider('github')
+    setUrl(PROVIDERS.github.defaultUrl)
+    setUser('')
+    setToken('')
+  }
+
+  const add = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      const next = await api.addAccount({ provider, url, user, token })
+      onChange(next)
+      const added = next.accounts.find((a) => a.id === hostOf(normaliseServerUrl(url)))
+      ui.toast(added ? `Signed in to ${added.id} as ${added.user}` : 'Account added')
+      reset()
+    } catch (e) {
+      ui.toast((e as Error).message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async (id: string): Promise<void> => {
+    const ok = await ui.confirm({ title: 'Remove account', message: `Remove the account for ${id}? Verdigit forgets its token; the token itself stays valid until you revoke it on the host.`, confirmLabel: 'Remove', danger: true })
+    if (ok) onChange(await api.removeAccount(id))
+  }
+
+  const tokenPage = url.trim() ? info.tokenPage(normaliseServerUrl(url)) : null
+
+  return (
+    <>
+      {settings.accounts.length > 0 && (
+        <div className="account-list">
+          {settings.accounts.map((a) => (
+            <div key={a.id} className="row account">
+              <Icon name="cloud" className="accent" />
+              <span className="grow ellipsis">
+                <b>{a.user}</b> <span className="dim">on {a.url.replace(/^https:\/\//, '')}</span>
+              </span>
+              <span className="faint" style={{ fontSize: 11 }}>{PROVIDERS[a.provider].label}</span>
+              <button className="btn small danger" onClick={() => remove(a.id)}>Remove</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {!adding ? (
+        <div className="row">
+          {!settings.accounts.length && <span className="dim grow">Sign in to GitHub, GitLab or another Git host to list your repositories, create pull requests and push over HTTPS without typing a password.</span>}
+          <button className="btn small" onClick={() => setAdding(true)}>
+            <Icon name="plus" size={13} /> Add account
+          </button>
+        </div>
+      ) : (
+        <div className="account-form">
+          <div className="field">
+            <label>Service</label>
+            <select className="select" value={provider} onChange={(e) => pick(e.target.value as ProviderKind)}>
+              {(Object.keys(PROVIDERS) as ProviderKind[]).map((p) => (
+                <option key={p} value={p}>{PROVIDERS[p].label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>Server</label>
+            <input className="input mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://git.example.com" spellCheck={false} />
+            {provider !== 'other' && <div className="hint">Change this for a self-hosted server{provider === 'github' ? ' (GitHub Enterprise)' : ''}.</div>}
+          </div>
+          {provider === 'other' && (
+            <div className="field">
+              <label>User name</label>
+              <input className="input mono" value={user} onChange={(e) => setUser(e.target.value)} spellCheck={false} />
+            </div>
+          )}
+          <div className="field">
+            <label>{provider === 'other' ? 'Password or token' : 'Access token'}</label>
+            <input className="input mono" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={info.tokenPlaceholder} autoFocus />
+            <div className="hint">
+              {info.tokenHint} Stored encrypted with your OS keychain.{' '}
+              {tokenPage && (
+                <a href="#" style={{ color: 'var(--accent)' }} onClick={(e) => {
+                  e.preventDefault()
+                  api.openExternal(tokenPage)
+                }}>Create a token</a>
+              )}
+            </div>
+          </div>
+          <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <button className="btn small" disabled={busy} onClick={reset}>Cancel</button>
+            <button className="btn small primary" disabled={busy || !url.trim() || !token.trim() || (provider === 'other' && !user.trim())} onClick={add}>
+              {busy ? (info.hasApi ? 'Checking…' : 'Saving…') : 'Add account'}
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 export function SettingsDialog({ settings, onSaved, done }: { settings: Settings; onSaved: (s: Settings) => void; done: (v: null) => void }) {
   const ui = useUI()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [token, setToken] = useState('')
   const [cloneDir, setCloneDir] = useState(settings.cloneDir)
   const [pullMode, setPullMode] = useState(settings.pullMode)
   const [autoFetchMinutes, setAutoFetchMinutes] = useState(settings.autoFetchMinutes)
@@ -392,9 +531,8 @@ export function SettingsDialog({ settings, onSaved, done }: { settings: Settings
       // Save the git location first: the identity is written with git itself.
       await api.saveSettings({ gitPath: gitPath.trim() || null })
       if (name.trim() && email.trim()) await api.setGlobalIdentity(name.trim(), email.trim())
-      let next = await api.saveSettings({ cloneDir, pullMode, autoFetchMinutes, gitPath: gitPath.trim() || null, autoUpdate })
+      const next = await api.saveSettings({ cloneDir, pullMode, autoFetchMinutes, gitPath: gitPath.trim() || null, autoUpdate })
       if (!(await api.gitInfo())) throw new Error('Git still cannot be found. Check the Git executable path.')
-      if (token.trim()) next = await api.setGitHubToken(token.trim())
       onSaved(next)
       ui.toast('Settings saved')
       done(null)
@@ -405,8 +543,7 @@ export function SettingsDialog({ settings, onSaved, done }: { settings: Settings
     }
   }
 
-  const signOut = async (): Promise<void> => {
-    const next = await api.setGitHubToken(null)
+  const accountsChanged = (next: Settings): void => {
     setS(next)
     onSaved(next)
   }
@@ -459,28 +596,8 @@ export function SettingsDialog({ settings, onSaved, done }: { settings: Settings
         </div>
       </div>
 
-      <h4 className="faint" style={{ margin: '8px 0 0', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' }}>GitHub</h4>
-      {s.hasGitHubToken ? (
-        <div className="row">
-          <Icon name="check" className="accent" />
-          <span className="grow">
-            Signed in as <b>{s.gitHubUser}</b>
-          </span>
-          <button className="btn small danger" onClick={signOut}>Remove token</button>
-        </div>
-      ) : (
-        <div className="field">
-          <label>Personal access token</label>
-          <input className="input mono" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="ghp_… or github_pat_…" />
-          <div className="hint">
-            Used to list your repositories, create pull requests, and authenticate HTTPS pushes to github.com. Needs the <span className="mono">repo</span> scope. Stored encrypted with your OS keychain.{' '}
-            <a href="#" style={{ color: 'var(--accent)' }} onClick={(e) => {
-              e.preventDefault()
-              api.openExternal('https://github.com/settings/tokens/new?scopes=repo&description=Verdigit')
-            }}>Create a token</a>
-          </div>
-        </div>
-      )}
+      <h4 className="faint" style={{ margin: '8px 0 0', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' }}>Accounts</h4>
+      <AccountsSection settings={s} onChange={accountsChanged} />
 
       <h4 className="faint" style={{ margin: '8px 0 0', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' }}>Behaviour</h4>
       <div className="field">
