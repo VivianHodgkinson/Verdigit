@@ -442,6 +442,8 @@ button {
 .tab .icon-btn {
   width: 18px;
   height: 18px;
+  margin-left: auto;
+  flex: none;
   opacity: 0;
 }
 .tab:hover .icon-btn,
