@@ -69,7 +69,9 @@ async function request<T>(account: Pick<Account, 'provider' | 'url'>, token: str
   }
   if (!res.ok) {
     const detail = errorText(await res.json().catch(() => null))
-    if (res.status === 401) throw new Error(`${label}: the token was rejected${detail ? ` (${detail})` : ''}. It may have expired; add the account again with a new one.`)
+    if (res.status === 401) {
+      throw new Error(`${label}: the token was rejected${detail ? ` (${detail})` : ''}. Check it was copied in full and hasn't expired or been revoked; if so, create a new one.`)
+    }
     throw new Error(`${label}: ${detail ?? `${res.status} ${res.statusText}`}`)
   }
   return res.json() as Promise<T>
