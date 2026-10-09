@@ -37,8 +37,9 @@ export const PROVIDERS: Record<ProviderKind, ProviderInfo> = {
     defaultUrl: 'https://gitlab.com',
     prNoun: 'merge request',
     hasApi: true,
-    tokenPage: (url) => `${url}/-/user_settings/personal_access_tokens?name=Verdigit&scopes=api`,
-    tokenHint: 'A personal access token with the api scope.',
+    tokenPage: (url) => `${url}/-/user_settings/personal_access_tokens`,
+    tokenHint:
+      'A fine-grained token with Code (Read, Push) and Merge Request (Create) on your projects, and User (Read) and Project (Read) on the User tab. Or a legacy token with the api scope.',
     tokenPlaceholder: 'glpat-…',
     branchPath: (b) => `/-/tree/${enc(b)}`
   },
