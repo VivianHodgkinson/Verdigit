@@ -1,6 +1,6 @@
 {
   "name": "sourcecontrol",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "description": "Verdigit: a dark & green desktop Git client with Git Flow built in",
   "main": "out/main/index.js",
   "scripts": {
