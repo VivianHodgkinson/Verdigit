@@ -127,3 +127,7 @@ Keyboard: `Ctrl+P` switch repository · `Ctrl+Tab` / `Ctrl+Shift+Tab` next / pre
 ## Support
 
 Verdigit is free and open source. If it saves you some time, you can [buy me a coffee on Ko-fi](https://ko-fi.com/iammrveee). It's appreciated, never expected.
+
+## License
+
+[MIT](LICENSE) © 2026 Vivian Hodgkinson
